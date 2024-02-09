@@ -200,7 +200,7 @@ class MenuBuilder:
         # Adding hyperlinks
         add_hyperlink("hyper1", "https://t.ly/bZeCc", "4.0", "4.end")
         add_hyperlink("hyper2", "https://t.ly/mvFRA", "7.0", "7.end")
-        add_hyperlink("hyper3", "https://github.com/erichnau/ApInsight/tree/new_GUI", "10.0", "10.end")
+        add_hyperlink("hyper3", "https://github.com/erichnau/ApInsight.git", "10.0", "10.end")
         add_hyperlink("hyper4", "mailto:erich.nau@niku.no", "13.0", "13.end")
 
         # Close button
