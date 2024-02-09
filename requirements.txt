@@ -1,0 +1,15 @@
+numpy
+pillow
+scipy
+matplotlib
+peakutils
+pandas
+rasterio
+screeninfo
+
+pyshp
+tqdm
+xarray
+
+
+

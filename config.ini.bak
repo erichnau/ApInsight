@@ -1,0 +1,7 @@
+[Application]
+use_compiled_exe = True
+
+[Greyscale]
+vmin = 4
+vmax = 18
+
