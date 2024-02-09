@@ -41,7 +41,7 @@ class RightFrame(Frame):
         buttons_frame_top.pack(side="top", fill="x", padx=5, pady=5)
 
         # Arbitrary Section Button
-        self.arbitrary_section_button = Button(buttons_frame_top, text='Arbitrary Section', state='disabled',
+        self.arbitrary_section_button = Button(buttons_frame_top, text='Show Section', state='disabled',
                                                command=self.create_arbitrary_section)
         self.arbitrary_section_button.grid(row=0, column=0, padx=5, pady=5, sticky='ew')
 
