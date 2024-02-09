@@ -1,7 +1,5 @@
-# ApInsight
+# ApInsight                    [![DOI](https://zenodo.org/badge/755009431.svg)](https://zenodo.org/doi/10.5281/zenodo.10639764)
 ### Ground Penetrating Radar Data Analysis Tool
-
-[![DOI](https://zenodo.org/badge/755009431.svg)](https://zenodo.org/doi/10.5281/zenodo.10639764)
 
 ![ApInsight](images/ApInsight.jpg)
 
