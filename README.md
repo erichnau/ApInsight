@@ -36,6 +36,11 @@ Contributions to ApInsight are welcome. Please ensure that any contributions fol
 ## License
 The software is released under the MIT License. See the LICENSE file for more details.
 
+## Citing ApInsight
+If you use ApInsight in your research or project, please cite it as follows:
+
+Nau, E. (2024). ApInsight: Ground Penetrating Radar Data Analysis Tool. GitHub. Available at: https://github.com/erichnau/ApInsight
+
 ## Acknowledgements
 This project was made possible through the support of the Norwegian Institute for Cultural Heritage Research ([NIKU](https://www.niku.no)). The strategic funding pot of NIKU, financed by the Norwegian Research Council, played a crucial role in facilitating the development of ApInsight.
 Gratitude is extended to [Geosphere Austria](https://www.geosphere.at/de) for their financial contribution, which aided the progression and enhancement of this project.
