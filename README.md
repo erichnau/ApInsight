@@ -24,11 +24,11 @@ ApInsight is a Python-based tool designed for analyzing and visualizing ground p
 - Recommended: Use a Python IDE like Pycharm Community Edition: https://www.jetbrains.com/pycharm/download/?section=windows
 - Install the required libraries listed in 'requirements.txt' by running **'pip install -r requirements.txt'**
 
-A short introduction video (for people new to Python) showing the setup of your Python environment to run ApInsight can be found here: https://bit.ly/ApInsight-Setup
+A short introduction video (for people new to Python) showing the setup of your Python environment to run ApInsight can be found here: https://t.ly/mvFRA
 
 ## Usage
 To start the application run **'main.py'** and the main window will open. All features are accessible through the main window. 
-The use of ApInsight is very intuitive and a detailed user guide can be found here: https://bit.ly/ApInsight
+The use of ApInsight is very intuitive and a detailed user guide can be found here: https://t.ly/bZeCc
 
 ## Contributing
 Contributions to ApInsight are welcome. Please ensure that any contributions follow the existing code structure and do not break existing functionality.
