@@ -175,7 +175,7 @@ class MenuBuilder:
 
     def show_help(self):
         self.show_dialog("Help",
-                         "Two videos explaining the installation and functionality of ApInsight can be found on YouTube:\n\n1. Setup and Installation: \nhttps://t.ly/bZeCc\n\n2. Introduction and User Guide: \nhttps://t.ly/mvFRA \n\nThese videos should answer most of your questions. If you have further issues, please post the issue directly in the GitHub repository: \nhttps://github.com/erichnau/ApInsight.git \n\nor send an e-mail to: \nerich.nau@niku.no")
+                         "Two videos explaining the installation and functionality of ApInsight can be found on YouTube:\n\n1. Setup and Installation: \nhttps://youtu.be/f0AKAc0pgbo\n\n2. Introduction and User Guide: \nhttps://youtu.be/lIJPaZ917v4 \n\nThese videos should answer most of your questions. If you have further issues, please post the issue directly in the GitHub repository: \nhttps://github.com/erichnau/ApInsight.git \n\nor send an e-mail to: \nerich.nau@niku.no")
 
     def show_dialog(self, title, text):
         window = Toplevel(self.master)
@@ -198,8 +198,8 @@ class MenuBuilder:
             txt.tag_add(tag_name, start_index, end_index)
 
         # Adding hyperlinks
-        add_hyperlink("hyper1", "https://t.ly/bZeCc", "4.0", "4.end")
-        add_hyperlink("hyper2", "https://t.ly/mvFRA", "7.0", "7.end")
+        add_hyperlink("hyper1", "https://youtu.be/f0AKAc0pgbo", "4.0", "4.end")
+        add_hyperlink("hyper2", "https://youtu.be/lIJPaZ917v4", "7.0", "7.end")
         add_hyperlink("hyper3", "https://github.com/erichnau/ApInsight.git", "10.0", "10.end")
         add_hyperlink("hyper4", "mailto:erich.nau@niku.no", "13.0", "13.end")
 
