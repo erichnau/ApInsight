@@ -12,26 +12,28 @@
 void saveDataAsNpy(const std::vector<std::vector<std::vector<float>>>& data,
     const char* output_file_path) {
 
-    int z_size = data.size();
+    unsigned long long z_size = data.size();
     if (z_size == 0) {
         std::cerr << "Error: Empty data." << std::endl;
         return;
     }
 
-    int y_size = data[0].size();
+    unsigned long long y_size = data[0].size();
     if (y_size == 0) {
         std::cerr << "Error: Empty data." << std::endl;
         return;
     }
 
-    int x_size = data[0][0].size();
+    unsigned long long x_size = data[0][0].size();
     if (x_size == 0) {
         std::cerr << "Error: Empty data." << std::endl;
         return;
     }
 
+    static std::vector<uint64_t> const shape{ z_size, y_size, x_size };
+
     // Flatten the data for cnpy
-    std::vector<float> flattened_data;
+    std::vector<float_t> flattened_data;
     flattened_data.reserve(x_size * y_size * z_size);
 
     for (int layer_index = 0; layer_index < z_size; ++layer_index) {
@@ -42,13 +44,8 @@ void saveDataAsNpy(const std::vector<std::vector<std::vector<float>>>& data,
         }
     }
 
-    // Convert dimensions to unsigned long long for cnpy
-    unsigned long long ull_x_size = static_cast<unsigned long long>(x_size);
-    unsigned long long ull_y_size = static_cast<unsigned long long>(y_size);
-    unsigned long long ull_z_size = static_cast<unsigned long long>(z_size);
-
     // Save the flattened data as npy
-    cnpy::npy_save(output_file_path, &flattened_data[0], { ull_z_size, ull_y_size, ull_x_size }, "w");
+    cnpy::npy_save(output_file_path, &flattened_data[0], shape, "w");
 }
 
 
@@ -65,7 +62,7 @@ double readBigEndianDouble(std::ifstream& file) {
 
 
 // Function to read and interpret a 4-byte integer as big-endian
-int32_t readBigEndianInt32(std::ifstream & file) {
+int32_t readBigEndianInt32(std::ifstream& file) {
     int32_t value;
     char rawValue[4];
     file.read(rawValue, 4);
@@ -151,7 +148,7 @@ int readFldDataSpecs(std::ifstream& file, int z_size) {
 
     int start_velo;
     start_velo = stop_b2 + num_dt * 4 * 2;
-    
+
     file.seekg(start_velo); // Skip the time_depth_table
 
     int num_velo;
@@ -167,9 +164,10 @@ int readFldDataSpecs(std::ifstream& file, int z_size) {
 
 // Function to read the FLD data
 void readFldData(std::ifstream& file, int x_size, int y_size, int number_of_layers, std::vector<std::vector<std::vector<float>>>& data) {
-    int data_start = readFldDataSpecs(file, number_of_layers);
+    int64_t data_start = readFldDataSpecs(file, number_of_layers);
 
     for (int layer_index = 0; layer_index < number_of_layers; ++layer_index) {
+        std::cout << "Layer index loaded: " << layer_index << std::endl;
         int64_t number_of_values_layer;
         file.seekg(data_start);
         file.read(reinterpret_cast<char*>(&number_of_values_layer), sizeof(int64_t));
@@ -178,7 +176,7 @@ void readFldData(std::ifstream& file, int x_size, int y_size, int number_of_laye
         min1 = readBigEndianFloat(file);
         max1 = readBigEndianFloat(file);
 
-        int data_stop = data_start + 16 + number_of_values_layer * 2;
+        int64_t data_stop = data_start + 16 + number_of_values_layer * 2;
 
         std::vector<int16_t> data_values(number_of_values_layer);
         file.seekg(data_start + 16);
@@ -241,7 +239,7 @@ int main(int argc, char* argv[]) {
     readFldHeader(file, version, xpixels, ypixels, zpixels, pixelsize, x_coor, y_coor, pixelsize_z, x_start, x_end, z_start, z_end);
 
     // Declare and initialize the 'data' vector
-    std::vector<std::vector<std::vector<float>>> data(zpixels, std::vector<std::vector<float>>(ypixels, std::vector<float>(xpixels, 0.0f)));
+    std::vector<std::vector<std::vector<float_t>>> data(zpixels, std::vector<std::vector<float>>(ypixels, std::vector<float>(xpixels, 0.0f)));
 
     auto start_time = std::chrono::high_resolution_clock::now(); // Get the start time
     readFldData(file, xpixels, ypixels, zpixels, data); // Pass 'data' as an argument
@@ -261,7 +259,3 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
-
-
-
-

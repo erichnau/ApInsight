@@ -6,8 +6,9 @@ import rasterio
 from rasterio.transform import from_origin
 
 from cpp_fld_to_npy import fld_to_npy
+from GUI.error_handling import confirm_python_processing
 
-def define_fld_parameters_cpp(file_path, overwrite=False):
+def define_fld_parameters_cpp(file_path, root=None, w1=None, w2=None, overwrite=False):
     base_name = os.path.splitext(file_path)[0]  # Get the path without the extension
     output_npy = base_name + '.npy'
 
@@ -16,17 +17,54 @@ def define_fld_parameters_cpp(file_path, overwrite=False):
 
     xpixels, ypixels, zpixels, pixelsize, x_coor, y_coor, pixelsize_z = read_fld_header(file_content)
     data_start, data_type, pixelsize_z, depth_table, time_table, _ = read_fld_data_specs(file_content, zpixels)
+
+    expected_filesize = get_expected_npy_size(xpixels, ypixels, zpixels)
+
     if not os.path.exists(output_npy):
-        fld_to_npy.process_fld_with_cpp(file_path, output_npy)
+        if expected_filesize > 7000000000:
+            response = confirm_python_processing(root, expected_filesize)
+            root.lift()
+            w1.lift()
+            w2.lift()
+            if response:
+                start_bits, stop_bits, number_of_values = get_start_stop_bits(file_content, zpixels, data_start)
+                read_fld_with_threads(file_content, xpixels, ypixels, zpixels, start_bits, stop_bits,
+                                  number_of_values, output_npy)
+            else:
+                print('User chose not to continue, aborting processing')
+                return None, None, None, None, None, None, None, None, None, None, None
+        else:
+            fld_to_npy.process_fld_with_cpp(file_path, output_npy)
     else:
         if overwrite:
-            fld_to_npy.process_fld_with_cpp(file_path, output_npy)
+            if expected_filesize > 7000000000:
+                response = confirm_python_processing(root, expected_filesize)
+                w1.lift()
+                w2.lift()
+                if response:
+                    start_bits, stop_bits, number_of_values = get_start_stop_bits(file_content, zpixels, data_start)
+                    read_fld_with_threads(file_content, xpixels, ypixels, zpixels, start_bits, stop_bits,
+                                          number_of_values, output_npy)
+                else:
+                    print('User chose not to continue, aborting processing')
+            else:
+                fld_to_npy.process_fld_with_cpp(file_path, output_npy)
+            print('Fld preprocesed')
         else:
             print(f"File {output_npy} already exists. Skipping...")
 
     fld_data = np.load(output_npy, mmap_mode='r')
 
     return fld_data, xpixels, ypixels, zpixels, pixelsize, x_coor, y_coor, pixelsize_z, data_type, depth_table, time_table
+
+def get_expected_npy_size(x, y, z):
+    x = np.int64(x)
+    y = np.int64(y)
+    z = np.int64(z)
+
+    exp_size = ((x * y * z) * 4) + 128
+
+    return exp_size
 
 def define_fld_parameters(file_path, overwrite=False):
     base_name = os.path.splitext(file_path)[0]
@@ -125,7 +163,7 @@ def get_start_stop_bits(file_content, number_of_layers, data_start):
         number_of_values.append(number_of_values_layer)
 
         # Determine the end position of the layer data
-        data_stop = data_start + 16 + number_of_values_layer * 2
+        data_stop = np.int64(data_start + 16 + number_of_values_layer * 2)
 
         start_bits.append(data_start)
         stop_bits.append(data_stop)
@@ -175,7 +213,8 @@ def read_fld_with_threads(file_content, x_size, y_size, number_of_layers, start_
     return data
 
 def create_depthslice_images(vmin, vmax, npy_file_path, zpixels, pixelsize_z, pixelsize_x, x_coor, y_coor, depth_table, time_table, data_type, z_vals):
-    pixelsize_z = int(pixelsize_z * 100)
+    pixelsize_z = round(pixelsize_z * 100)
+
     radar_data = np.load(npy_file_path)
     npy_base_name = os.path.splitext(os.path.basename(npy_file_path))[0]
     working_directory = os.path.dirname(npy_file_path)

@@ -27,6 +27,7 @@ class ProjectGUI(Frame, object):
         self.section_data = {}
         self.project_open = False
 
+        self.master = master
         self.bold_font = font.Font(weight="bold", size=10)
         self.create_window(master)
 
@@ -66,11 +67,11 @@ class ProjectGUI(Frame, object):
         open_project_button = Button(file_command_frame, text='Open project', command=self.open_file)
         open_project_button.pack(side=LEFT, padx=5)
 
-        save_project_button = Button(file_command_frame, text='Save project', command=self.save_file)
-        save_project_button.pack(side=LEFT, padx=5)
+        self.save_project_button = Button(file_command_frame, text='Save project', state=DISABLED, command=self.save_file)
+        self.save_project_button.pack(side=LEFT, padx=5)
 
-        button_add = Button(file_command_frame, text='Add dataset to project', command=self.add_dataset_to_project)
-        button_add.pack(side=LEFT, padx=5)
+        self.button_add = Button(file_command_frame, text='Add dataset to project', state=DISABLED, command=self.add_dataset_to_project)
+        self.button_add.pack(side=LEFT, padx=5)
 
         exit_button = Button(file_command_frame, text='Exit', command=self.exit)
         exit_button.pack(side=LEFT, padx=5)
@@ -330,6 +331,11 @@ class ProjectGUI(Frame, object):
             self.editor_canvas.config(scrollregion=self.editor_canvas.bbox("all"))
 
             self.project_open = True
+            self.activate_buttons()
+
+    def activate_buttons(self):
+        self.button_add.config(state=NORMAL)
+        self.save_project_button.config(state=NORMAL)
 
     def add_dataset_to_project(self):
         # Open a file dialog to let the user select an .fld or .ap_prj file
@@ -565,7 +571,10 @@ class ProjectGUI(Frame, object):
 
                 # Use the compiled executable function if not containing "DTM" and the compiled exe is to be used
                 if self.use_compiled_exe:
-                    _, _, _, self.zpixels, _, _, _, self.pixelsize_z, _, _, _ = read_fld.define_fld_parameters_cpp(entry, overwrite=True)
+                    _, _, _, self.zpixels, _, _, _, self.pixelsize_z, _, _, _ = read_fld.define_fld_parameters_cpp(entry, self.master, self.results_window, progress_window, overwrite=True)
+                    if self.zpixels == None:
+                        progress_window.destroy()
+                        return
                 else:
                     _, _, _, self.zpixels, _, _, _, self.pixelsize_z, _, _, _ = read_fld.define_fld_parameters(entry, overwrite=True)
             # Close the progress bar window after processing
@@ -624,7 +633,7 @@ class ProjectGUI(Frame, object):
                         depthslice_folder_path = 'None'
 
                     if depthslice_folder_path != 'None':
-                        missing_images = self.check_ds_folder(fld_file_path, zpixels, int(pixelsize_z * 100),
+                        missing_images = self.check_ds_folder(fld_file_path, zpixels, round(pixelsize_z * 100),
                                                           depthslice_folder_path, data_type)
                         filesize = self.check_ds_images_size(depthslice_folder_path, fld_file_path, xpixels, ypixels)
                         if not filesize: missing_images.append('filesize')
@@ -644,7 +653,6 @@ class ProjectGUI(Frame, object):
                         "data_type": data_type,
                         "z_vals": z_vals
                     }
-
         # Call the function to display the results
         self.display_depthslice_check_results(check_results)
 
