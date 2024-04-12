@@ -58,6 +58,14 @@ class SectionView(tk.Toplevel):
         self.vmax = int(self.config_manager.get_option('Greyscale', 'vmax'))
         self.initial_window_size=False
 
+        self.zoom_level = 1  # Track zoom level
+        self.init_image_position = (0, 0)  # Initial image position
+
+        self.x_axis = None
+        self.mask_tag = None
+        self.pan_offset_x = 0
+        self.pan_offset_y = 0
+
         self.create_widgets()
         self.create_temporary_folder()
 
@@ -140,16 +148,57 @@ class SectionView(tk.Toplevel):
         self.section_canvas = tk.Canvas(image_frame, bg="white")
         self.section_canvas.pack(fill="both", expand=True)
 
-        self.x_axis = self.section_canvas.create_line(0, 0, 0, 0, fill='black', width=2)  # x-axis line
-        self.y_axis = self.section_canvas.create_line(0, 0, 0, 0, fill='black', width=2)  # y-axis line
-        self.secondary_y_axis = self.section_canvas.create_line(0, 0, 0, 0, fill='black', width=2)  # y-axis line
-        self.x_labels = []  # list to store x-axis labels
         self.y_labels = []  # list to store y-axis labels
+        self.x_labels = []  # list to store x-axis labels
         self.secondary_y_labels = []
 
         if 'DTMfromGPR' in self.file_name:
             topo_correction.config(state='disabled')
             clear_topo.config(state='disabled')
+
+        self.create_zoom_controls()
+
+    def create_zoom_controls(self):
+        zoom_in_button = tk.Button(self.top_frame_section_window, text="+", command=self.zoom_in)
+        zoom_in_button.pack(side="left", padx=5, pady=5)
+        zoom_out_button = tk.Button(self.top_frame_section_window, text="-", command=self.zoom_out)
+        zoom_out_button.pack(side="left", padx=5, pady=5)
+        # Bind right-click drag for panning
+        self.section_canvas.bind("<Button-3>", self.start_pan)
+        self.section_canvas.bind("<B3-Motion>", self.pan_image)
+
+    def zoom_in(self):
+        self.zoom_level *= 1.1  # Increase zoom level by 10%
+        self.update_image()
+
+    def zoom_out(self):
+        self.zoom_level *= 0.9  # Decrease zoom level by 10%
+        self.update_image()
+
+    def start_pan(self, event):
+        self.init_image_position = (event.x, event.y)  # Capture initial position
+
+    def pan_image(self, event):
+        dx = (event.x - self.init_image_position[0]) * (1 / self.zoom)
+        dy = (event.y - self.init_image_position[1]) * (1 / self.zoom)
+        self.pan_offset_x += dx
+        self.pan_offset_y += dy
+        self.section_canvas.move(self.canvas_image, dx, dy)
+        self.init_image_position = (event.x, event.y)
+        self.update_axes_based_on_pan(dx, dy)
+
+    def update_axes_based_on_pan(self, dx, dy):
+        # Adjust the x-axis labels based on the image movement, skip the last label
+        for label in self.x_labels[:-1]:  # The '[:-1]' slice selects all but the last item
+            self.section_canvas.move(label, dx, 0)
+
+        # Adjust the y-axis labels based on the image movement, skip the last label
+        for label in self.y_labels[:-1]:  # Similarly, '[:-1]' skips the last item
+            self.section_canvas.move(label, 0, dy)
+
+        # Do the same for secondary y-axis labels if present, skip the last label
+        for label in self.secondary_y_labels[:-1]:
+            self.section_canvas.move(label, 0, dy)
 
     def adjust_vmin(self, adjustment):
         new_vmin = self.vmin + adjustment
@@ -345,7 +394,7 @@ class SectionView(tk.Toplevel):
 
         self.section_canvas.bind('<Motion>', self.draw_lines)
 
-
+        self.init_image_pos = self.section_canvas.coords(self.canvas_image)
 
     def calculate_frame_width(self, frame):
         max_width = 0
@@ -384,26 +433,39 @@ class SectionView(tk.Toplevel):
         self.section_canvas.update_idletasks()
 
     def update_axes(self, top_corr=False):
+        if self.x_axis is not None:
+            self.section_canvas.delete(self.x_axis)
+            self.section_canvas.delete(self.y_axis)
+            self.section_canvas.delete(self.secondary_y_axis)
+
+        self.x_axis = self.section_canvas.create_line(0, 0, 0, 0, fill='black', width=2)  # x-axis line
+        self.y_axis = self.section_canvas.create_line(0, 0, 0, 0, fill='black', width=2)  # y-axis line
+        self.secondary_y_axis = self.section_canvas.create_line(0, 0, 0, 0, fill='black', width=2)  # y-axis line
+
         # Calculate the positions for the x-axis and y-axis lines
-        x_axis_y = self.section_image.height() + 12
+        self.x_axis_y = self.section_image.height() + 12
         self.y_axis_x = 50  # adjust the x-coordinate for y-axis line as needed
         self.secondary_y_axis_x = self.section_image.width() + self.y_axis_x + 2
 
+        self.create_masks()
+
         # Update the x-axis line
-        self.section_canvas.coords(self.x_axis, self.y_axis_x, x_axis_y, self.secondary_y_axis_x, x_axis_y)
+        self.section_canvas.coords(self.x_axis, self.y_axis_x, self.x_axis_y, self.secondary_y_axis_x, self.x_axis_y)
 
         # Update the y-axis line
-        self.section_canvas.coords(self.y_axis, self.y_axis_x, 10, self.y_axis_x, x_axis_y)
+        self.section_canvas.coords(self.y_axis, self.y_axis_x, 10, self.y_axis_x, self.x_axis_y)
 
-        self.section_canvas.coords(self.secondary_y_axis, self.secondary_y_axis_x, 10, self.secondary_y_axis_x, x_axis_y)
+        self.section_canvas.coords(self.secondary_y_axis, self.secondary_y_axis_x, 10, self.secondary_y_axis_x, self.x_axis_y)
 
         # Remove existing x-axis labels
         for label in self.x_labels:
             self.section_canvas.delete(label)
+        self.x_labels = []  # list to store x-axis labels
 
         # Remove existing y-axis labels
         for label in self.y_labels:
             self.section_canvas.delete(label)
+        self.y_labels = []  # list to store y-axis labels
 
         # Remove existing secondary y-axis labels
         for label in self.secondary_y_labels:
@@ -446,7 +508,7 @@ class SectionView(tk.Toplevel):
         distance_ticks = np.linspace(0, self.dist, num=5)  # Adjust the number of ticks as needed
 
         # Add new y-axis labels
-        y_label_interval = (x_axis_y - 10) / (len(self.depth_ticks) - 1)
+        y_label_interval = (self.x_axis_y - 10) / (len(self.depth_ticks) - 1)
         for i, depth in enumerate(self.depth_ticks):
             label_y = 10 + i * y_label_interval
 
@@ -472,12 +534,14 @@ class SectionView(tk.Toplevel):
         for i, distance in enumerate(distance_ticks):
             label_x = self.y_axis_x + i * x_label_interval
             label_text = f"{distance:.1f}"  # Format the distance value as needed
-            label = self.section_canvas.create_text(label_x, x_axis_y + 10, anchor='n', text=label_text)
+            label = self.section_canvas.create_text(label_x, self.x_axis_y + 10, anchor='n', text=label_text)
             self.x_labels.append(label)
+
+        self.init_y_x_labels = self.x_axis_y+10
 
         # Add distance label
         distance_label_x = int((self.y_axis_x + self.secondary_y_axis_x) / 2)
-        distance_label_y = x_axis_y + 25  # adjust the y-coordinate for the depth label as needed
+        distance_label_y = self.x_axis_y + 25  # adjust the y-coordinate for the depth label as needed
         distance_label = self.section_canvas.create_text(distance_label_x, distance_label_y, anchor='n',
                                                          text='Distance (m)', font=("Arial", 11, "bold"))
         self.y_labels.append(distance_label)
@@ -485,15 +549,15 @@ class SectionView(tk.Toplevel):
         if 'DTMfromGPR' in self.file_name:
             # Add depth label
             depth_label_x = self.y_axis_x - 40
-            depth_label_y = int((10 + x_axis_y) / 2)
+            depth_label_y = int((10 + self.x_axis_y) / 2)
         elif top_corr:
             # Add depth label
             depth_label_x = self.y_axis_x - 40
-            depth_label_y = int((10 + x_axis_y) / 2)
+            depth_label_y = int((10 + self.x_axis_y) / 2)
         else:
             # Add depth label
             depth_label_x = self.y_axis_x - 35
-            depth_label_y = int((10 + x_axis_y) / 2)
+            depth_label_y = int((10 + self.x_axis_y) / 2)
 
         if top_corr:
             depth_label_text = 'Elevation (m)'  # Update label text for topo-corrected sections
@@ -511,13 +575,13 @@ class SectionView(tk.Toplevel):
         if 'DTMfromGPR' in self.file_name:
             # Add secondary depth label
             secondary_depth_label_x = self.secondary_y_axis_x + 40  # adjust the x-coordinate for the secondary depth label as needed
-            secondary_depth_label_y = int((10 + x_axis_y) / 2)
+            secondary_depth_label_y = int((10 + self.x_axis_y) / 2)
         elif top_corr:
             secondary_depth_label_x = self.secondary_y_axis_x + 40  # adjust the x-coordinate for the secondary depth label as needed
-            secondary_depth_label_y = int((10 + x_axis_y) / 2)
+            secondary_depth_label_y = int((10 + self.x_axis_y) / 2)
         else:
             secondary_depth_label_x = self.secondary_y_axis_x + 35  # adjust the x-coordinate for the secondary depth label as needed
-            secondary_depth_label_y = int((10 + x_axis_y) / 2)
+            secondary_depth_label_y = int((10 + self.x_axis_y) / 2)
 
         if top_corr:
             secondary_depth_label_text = 'Elevation (m)'  # Update label text for topo-corrected sections
@@ -530,6 +594,33 @@ class SectionView(tk.Toplevel):
                                                                 anchor='e', text=secondary_depth_label_text, angle=90,
                                                                 font=("Arial", 11, "bold"))
         self.secondary_y_labels.append(secondary_depth_label)
+
+
+    def create_masks(self):
+        # Assuming self.canvas is your Tkinter Canvas instance
+        canvas_width = self.section_canvas.winfo_width()
+        canvas_height = self.section_canvas.winfo_height()
+
+        if self.mask_tag is not None:
+            self.section_canvas.delete("mask")
+
+        # Color to match the background or any color that indicates a non-visible area
+        mask_color = 'white'
+        self.mask_tag = 'mask'
+
+        # Top mask
+        self.section_canvas.create_rectangle(-100, -100, canvas_width + 100, 10, fill=mask_color, outline=mask_color, tags=self.mask_tag)
+
+        # Bottom mask
+        self.section_canvas.create_rectangle(-100, self.x_axis_y + 1, canvas_width + 100, canvas_height + 100, fill=mask_color,
+                                             outline=mask_color, tags=self.mask_tag)
+
+        # Left mask
+        self.section_canvas.create_rectangle(-100, -100, self.y_axis_x - 2, canvas_height + 100, fill=mask_color, outline=mask_color, tags=self.mask_tag)
+
+        # Right mask
+        self.section_canvas.create_rectangle(self.secondary_y_axis_x + 1, -100, canvas_width + 100, canvas_height + 100, fill=mask_color,
+                                             outline=mask_color, tags=self.mask_tag)
 
     def draw_lines(self, event):
         x, y = event.x, event.y
@@ -901,10 +992,12 @@ class SectionView(tk.Toplevel):
 
         self.adjust_window_size()
         self.lift()
+        self.init_image_position = (0, 0)
 
     def clear_topography(self):
         self.display_section(self.image_path, top_corr=False, clear_topo=True)
         self.display_section(self.image_path, top_corr=False, clear_topo=True)
+        self.init_image_position = (0, 0)
 
     def select_dtm_file(self):
         dtm_file_options = list(self.dtm_files.keys())
