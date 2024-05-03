@@ -314,23 +314,21 @@ class SectionView(tk.Toplevel):
         self.update_label_positions()
 
     def update_x_labels_for_full_image(self):
-        num_visible_labels = 5  # Number of labels in the visible area
+        num_visible_labels = 5  # Number of labels always visible in the viewport
 
-        # Calculate the visible width in pixels and in meters
-        visible_width_pixels = min(self.secondary_y_axis_x - self.y_axis_x, self.section_image.width())
-        total_width_pixels = self.section_image.width()
+        # Calculate the visible width in pixels
+        actual_x0 = self.section_canvas.coords(self.canvas_image)[0]
+        canvas_width = self.section_canvas.winfo_width()
+        visible_width_pixels = min(canvas_width - max(actual_x0, 0), self.section_image.width())
 
         # The ratio of pixels to meters for the full image
-        pixel_to_meter_ratio = self.dist / total_width_pixels
+        pixel_to_meter_ratio = self.dist / self.section_image.width()
 
-        # The actual visible width in meters
-        visible_width_meters = visible_width_pixels * pixel_to_meter_ratio
+        # Calculate the interval in meters between labels for the visible part
+        label_interval_pixels = visible_width_pixels / (num_visible_labels - 1)
 
-        # Calculate the interval in meters between labels
-        label_interval_meters = visible_width_meters / (num_visible_labels - 1)
-
-        # Total number of labels needed for the entire image
-        total_labels_needed = int(total_width_pixels / (label_interval_meters / pixel_to_meter_ratio)) + 1
+        # Total number of labels needed for the entire image, based on the same interval
+        total_labels_needed = int(self.section_image.width() / label_interval_pixels) + 2
 
         # Ensure there are enough labels, create more if needed
         while len(self.x_labels) < total_labels_needed:
@@ -339,8 +337,8 @@ class SectionView(tk.Toplevel):
 
         # Update positions and texts of all labels for the entire image width
         for i in range(total_labels_needed):
-            label_x = self.y_axis_x + i * (label_interval_meters / pixel_to_meter_ratio)
-            label_text = f"{i * label_interval_meters:.1f}"
+            label_x = actual_x0 + i * label_interval_pixels
+            label_text = f"{i * label_interval_pixels * pixel_to_meter_ratio:.1f}"
             self.section_canvas.coords(self.x_labels[i], label_x, self.x_axis_y + 10)
             self.section_canvas.itemconfig(self.x_labels[i], text=label_text)
 
@@ -359,6 +357,8 @@ class SectionView(tk.Toplevel):
         visible_height_pixels = self.x_axis_y - 10
         total_height_pixels = self.section_image.height()
 
+        actual_y0 = self.section_canvas.coords(self.canvas_image)[1]
+
         if self.topo_corrected:
             total_depth_meters = max(self.height_profile) - min(self.height_profile)
         else:
@@ -367,7 +367,7 @@ class SectionView(tk.Toplevel):
         depth_per_pixel = total_depth_meters / total_height_pixels
         visible_depth_meters = visible_height_pixels * depth_per_pixel
         label_interval_meters = visible_depth_meters / (num_visible_labels - 1)
-        total_labels_needed = int(total_height_pixels / (label_interval_meters / depth_per_pixel)) + 1
+        total_labels_needed = int(total_height_pixels / (label_interval_meters / depth_per_pixel)) + 2
 
         # Choose which label list and axis position to use based on the 'primary' parameter
         labels = self.y_labels if primary else self.secondary_y_labels
@@ -381,7 +381,7 @@ class SectionView(tk.Toplevel):
 
         # Update positions and texts of all labels for the entire image height
         for i in range(total_labels_needed):
-            label_y = 10 + i * (label_interval_meters / depth_per_pixel)
+            label_y = actual_y0 + i * (label_interval_meters / depth_per_pixel)
             label_text = f"{i * label_interval_meters:.1f}"
             self.section_canvas.coords(labels[i], axis_x_position, label_y)
             self.section_canvas.itemconfig(labels[i], text=label_text)
@@ -1240,7 +1240,59 @@ class SectionView(tk.Toplevel):
 
         self.lift()'''
 
+    def save_section(self):
+        file_path = filedialog.asksaveasfilename(defaultextension='.png', filetypes=[('PNG Image', '*.png')])
+        if not file_path:
+            return  # User cancelled the save operation
 
+        # Calculate the visible bounds in image coordinates
+        visible_bounds = self.get_visible_image_bounds()
+        if not visible_bounds:
+            return  # No visible bounds calculated
+
+        visible_left, visible_top, visible_right, visible_bottom = visible_bounds
+
+        # Crop the image to the visible area
+        if self.topo_corrected:
+            image_to_save = Image.fromarray(self.topo_corr_data)
+        else:
+            image_to_save = self.image  # Assuming self.image is a PIL Image object
+
+        # Crop the image based on calculated bounds
+        cropped_image = image_to_save.crop((visible_left, visible_top, visible_right, visible_bottom))
+
+        # Save the cropped image
+        cropped_image.save(file_path, 'PNG')
+
+    def get_visible_image_bounds(self):
+        zoom_level = self.get_zoom_level()  # Ensure this function returns the current zoom factor
+
+        canvas_width = self.section_canvas.winfo_width()
+        canvas_height = self.section_canvas.winfo_height()
+
+        # Get the current position of the image on the canvas
+        current_pos = self.section_canvas.coords(self.canvas_image)
+        img_x, img_y = current_pos[0], current_pos[1]
+
+        # Calculate the bounds in the original image coordinates
+        visible_left = int(max(0, -img_x / zoom_level))
+        visible_top = int(max(0, -img_y / zoom_level))
+        visible_right = int(min(self.resized_width, (canvas_width - img_x) / zoom_level))
+        visible_bottom = int(min(self.resized_height, (canvas_height - img_y) / zoom_level))
+
+        return visible_left, visible_top, visible_right, visible_bottom
+
+    def get_zoom_level(self):
+        if not hasattr(self, 'original_width'):  # If original dimensions are not recorded
+            return 1  # Assume no zoom
+
+        # Assuming current_bbox provides the bounding box of the image on the canvas
+        current_bbox = self.section_canvas.bbox(self.canvas_image)
+        if not current_bbox:
+            return 1  # If no bbox is available, assume no zoom
+
+        current_width = current_bbox[2] - current_bbox[0]
+        return current_width / self.resized_width
 
     def add_topography(self):
         if len(self.dtm_files) == 1:
