@@ -1147,7 +1147,7 @@ class SectionView(tk.Toplevel):
         plt.savefig(self.image_path, dpi=dpi, bbox_inches='tight', pad_inches=0, transparent=True)
         plt.close()
 
-    def save_section(self):
+    '''def save_section(self):
         file_path = filedialog.asksaveasfilename(defaultextension='.png', filetypes=[('PNG Image', '*.png')])
         if file_path:
             dpi = 300
@@ -1238,7 +1238,9 @@ class SectionView(tk.Toplevel):
             plt.savefig(file_path, dpi=dpi, bbox_inches='tight')
             plt.close()
 
-        self.lift()
+        self.lift()'''
+
+
 
     def add_topography(self):
         if len(self.dtm_files) == 1:
