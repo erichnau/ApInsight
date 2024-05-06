@@ -228,8 +228,6 @@ class SectionView(tk.Toplevel):
 
         # Calculate the new position based on the zoom center
         current_pos = self.section_canvas.coords(self.canvas_image)
-        shift_x = (new_width - self.section_image.width()) / 2
-        shift_y = (new_height - self.section_image.height()) / 2
         new_x = viewport_center_x - (viewport_center_x - current_pos[0]) * 1.1
         new_y = viewport_center_y - (viewport_center_y - current_pos[1]) * 1.1
 
@@ -351,6 +349,7 @@ class SectionView(tk.Toplevel):
             self.section_canvas.tag_raise(label)
 
     def update_y_labels_for_full_image(self, primary=True):
+        print(self.y_labels)
         num_visible_labels = 5  # Desired number of labels in the visible area
 
         # Determine the visible height in pixels and calculate depth parameters
@@ -360,7 +359,9 @@ class SectionView(tk.Toplevel):
         actual_y0 = self.section_canvas.coords(self.canvas_image)[1]
 
         if self.topo_corrected:
-            total_depth_meters = max(self.height_profile) - min(self.height_profile)
+            min_height = min(self.height_profile)
+            max_height = max(self.height_profile)
+            total_depth_meters = self.depth_m + max_height - min_height
         else:
             total_depth_meters = self.depth_m
 
@@ -382,7 +383,13 @@ class SectionView(tk.Toplevel):
         # Update positions and texts of all labels for the entire image height
         for i in range(total_labels_needed):
             label_y = actual_y0 + i * (label_interval_meters / depth_per_pixel)
-            label_text = f"{i * label_interval_meters:.1f}"
+            if self.topo_corrected:
+                # For topo_corrected, calculate label based on elevation differences
+                label_text = f"{max_height - i * label_interval_meters:.1f}"
+            else:
+                # Regular depth labels
+                label_text = f"{i * label_interval_meters:.1f}"
+
             self.section_canvas.coords(labels[i], axis_x_position, label_y)
             self.section_canvas.itemconfig(labels[i], text=label_text)
 
@@ -781,11 +788,11 @@ class SectionView(tk.Toplevel):
             else:
                 label_text = f"{depth:.1f}"  # Use regular depth value for standard section
 
-            label = self.section_canvas.create_text(self.y_axis_x - 5, label_y, anchor='e', text=label_text, tags='label')
+            label = self.section_canvas.create_text(self.y_axis_x - 5, label_y, anchor='e', text=label_text, tags='label_y')
             self.y_labels.append(label)
 
             secondary_label = self.section_canvas.create_text(self.secondary_y_axis_x + 5, label_y, anchor='w',
-                                                                  text=str(label_text), tags='label')
+                                                                  text=str(label_text), tags='label_y')
             self.secondary_y_labels.append(secondary_label)
 
         # Add new x-axis labels
@@ -793,7 +800,7 @@ class SectionView(tk.Toplevel):
         for i, distance in enumerate(distance_ticks):
             label_x = self.y_axis_x + i * x_label_interval
             label_text = f"{distance:.1f}"  # Format the distance value as needed
-            label = self.section_canvas.create_text(label_x, self.x_axis_y + 10, anchor='n', text=label_text, tags='label')
+            label = self.section_canvas.create_text(label_x, self.x_axis_y + 10, anchor='n', text=label_text, tags='label_x')
             self.x_labels.append(label)
 
         self.init_y_x_labels = self.x_axis_y+10
@@ -1147,7 +1154,7 @@ class SectionView(tk.Toplevel):
         plt.savefig(self.image_path, dpi=dpi, bbox_inches='tight', pad_inches=0, transparent=True)
         plt.close()
 
-    '''def save_section(self):
+    def save_section2(self):
         file_path = filedialog.asksaveasfilename(defaultextension='.png', filetypes=[('PNG Image', '*.png')])
         if file_path:
             dpi = 300
@@ -1156,6 +1163,9 @@ class SectionView(tk.Toplevel):
                 xpixels, ypixels = self.topo_corr_data.shape[1], self.topo_corr_data.shape[0]
             else:
                 xpixels, ypixels = self.section.shape[1], self.section.shape[0]
+
+            print('save 2:', xpixels*self.zoom*3, ypixels*self.zoom*3)
+            print(self.zoom)
             figsize = (xpixels * self.zoom * 3) / dpi, (ypixels * self.zoom * 3) / dpi
             fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
@@ -1238,7 +1248,33 @@ class SectionView(tk.Toplevel):
             plt.savefig(file_path, dpi=dpi, bbox_inches='tight')
             plt.close()
 
-        self.lift()'''
+        self.lift()
+
+    def get_visible_image_bounds(self):
+        # Get the position of the image on the canvas
+        img_x, img_y = self.section_canvas.coords(self.canvas_image)
+
+        # Get the current size of the image displayed on the canvas
+        current_image_width = self.section_image.width()
+        current_image_height = self.section_image.height()
+
+        # Determine the visible area bounds on the canvas
+        left_bound = self.y_axis_x
+        top_bound = 10
+        right_bound = self.secondary_y_axis_x
+        bottom_bound = self.x_axis_y
+
+        # Convert canvas coordinates to image coordinates
+        visible_left = int(max(0, left_bound - img_x))
+        visible_top = int(max(0, top_bound - img_y))
+        visible_right = int(min(current_image_width, right_bound - img_x))
+        visible_bottom = int(min(current_image_height, bottom_bound - img_y))
+
+        # Check for the case where 'right' is less than 'left'
+        if visible_right <= visible_left or visible_bottom <= visible_top:
+            return None  # Return None to indicate there's no valid crop area
+
+        return visible_left, visible_top, visible_right, visible_bottom
 
     def save_section(self):
         file_path = filedialog.asksaveasfilename(defaultextension='.png', filetypes=[('PNG Image', '*.png')])
@@ -1252,47 +1288,284 @@ class SectionView(tk.Toplevel):
 
         visible_left, visible_top, visible_right, visible_bottom = visible_bounds
 
-        # Crop the image to the visible area
-        if self.topo_corrected:
-            image_to_save = Image.fromarray(self.topo_corr_data)
-        else:
-            image_to_save = self.image  # Assuming self.image is a PIL Image object
+        # Check for the case where 'right' is less than 'left'
+        if visible_right <= visible_left or visible_bottom <= visible_top:
+            return None  # Return None to indicate there's no valid crop area
 
-        # Crop the image based on calculated bounds
-        cropped_image = image_to_save.crop((visible_left, visible_top, visible_right, visible_bottom))
+        # Crop the PIL image to the visible area
+        self.cropped_image = self.apply_transformations(visible_left, visible_top, visible_right, visible_bottom)
 
         # Save the cropped image
-        cropped_image.save(file_path, 'PNG')
+        self.cropped_image.save(file_path, 'PNG')
 
-    def get_visible_image_bounds(self):
-        zoom_level = self.get_zoom_level()  # Ensure this function returns the current zoom factor
+        self.plot_image_with_labels(file_path=file_path)
 
-        canvas_width = self.section_canvas.winfo_width()
-        canvas_height = self.section_canvas.winfo_height()
+    '''def plot_image_with_labels(self, file_path):
+        # Gather data for each set of labels
+        x_label_data = self.get_label_data(self.x_labels)
+        y_label_data = self.get_label_data(self.y_labels)
+        secondary_y_label_data = self.get_label_data(self.secondary_y_labels)
+        additional_label_data = self.get_label_data(self.additional_labels)
 
-        # Get the current position of the image on the canvas
-        current_pos = self.section_canvas.coords(self.canvas_image)
-        img_x, img_y = current_pos[0], current_pos[1]
+        # Convert the PIL image to a NumPy array for Matplotlib to handle
+        image_array = np.array(self.cropped_image)
 
-        # Calculate the bounds in the original image coordinates
-        visible_left = int(max(0, -img_x / zoom_level))
-        visible_top = int(max(0, -img_y / zoom_level))
-        visible_right = int(min(self.resized_width, (canvas_width - img_x) / zoom_level))
-        visible_bottom = int(min(self.resized_height, (canvas_height - img_y) / zoom_level))
+        xpixels, ypixels = image_array.shape[1], image_array.shape[0]
+        print('save 1:', xpixels, ypixels)
 
-        return visible_left, visible_top, visible_right, visible_bottom
+        dpi = 300
+        plt.rcParams.update({'font.size': 10})
 
-    def get_zoom_level(self):
-        if not hasattr(self, 'original_width'):  # If original dimensions are not recorded
-            return 1  # Assume no zoom
+        figsize = ((xpixels * 3) / dpi, (ypixels * 3) / dpi)
 
-        # Assuming current_bbox provides the bounding box of the image on the canvas
-        current_bbox = self.section_canvas.bbox(self.canvas_image)
-        if not current_bbox:
-            return 1  # If no bbox is available, assume no zoom
+        fig, ax = plt.subplots(dpi=dpi)
+        ax.imshow(image_array)
 
-        current_width = current_bbox[2] - current_bbox[0]
-        return current_width / self.resized_width
+        #plt.subplots_adjust(left=0.03, right=0.97, top=0.90, bottom=0.2)  # Minimize subplot padding
+
+        # Remove standard axes ticks
+        ax.set_xticks([])  # Remove x-axis tick marks
+        ax.set_yticks([])  # Remove y-axis tick marks
+
+        # Optionally remove axes labels too, if needed
+        ax.set_xlabel('')
+        ax.set_ylabel('')
+
+        # Plotting labels
+        for data in y_label_data:
+            if data['y'] <= self.x_axis_y and data['y'] >= 10:
+                ax.text(data['x'] - self.y_axis_x, data['y'] - 10, data['text'], color='black', ha='right', va='center')
+
+        for data in x_label_data:
+            if data['x'] <= self.secondary_y_axis_x and data['x'] >= self.y_axis_x:
+                ax.text(data['x'] - self.y_axis_x, data['y'], data['text'], color='black', ha='center', va='center')
+
+        for data in secondary_y_label_data:
+            if data['y'] <= self.x_axis_y and data['y'] >= 10:
+                ax.text(data['x'] - self.y_axis_x, data['y'] - 10, data['text'], color='black', ha='left', va='center')
+
+        for data in additional_label_data:
+            if data['tag'] == 'dist_label':
+                ax.text(data['x'], data['y'], data['text'], ha='center', va='top', color='black')
+            elif data['tag'] == 'depth_label':
+                ax.text(data['x'] - self.y_axis_x, data['y'] - 10, data['text'], rotation=90, ha='center', va='center',
+                        color='black')
+            elif data['tag'] == 'sec_depth_label':
+                ax.text(data['x'] - self.y_axis_x, data['y'] - 10, data['text'], rotation=90, ha='center', va='center',
+                        color='black')
+
+        # Save the plot to a file
+        fig.savefig(file_path, dpi=300)
+
+        # Close the plot to free up memory
+        plt.close(fig)'''
+
+    def plot_image_with_labels(self, file_path):
+        # Gather data for each set of labels (currently commented out)
+        # Convert the PIL image to a NumPy array for Matplotlib to handle
+        image_array = np.array(self.cropped_image)
+
+        print('Image shape: ', image_array.shape)
+        xpixels, ypixels = image_array.shape[1], image_array.shape[0]
+        dpi = 300
+        plt.rcParams.update({'font.size': 10})
+        figsize = ((xpixels * 3) / dpi, (ypixels * 3) / dpi)  # Adjust figsize calculation
+
+        # Create the figure and axes using figsize
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+        ax.imshow(image_array)
+        ax.set_aspect('auto')  # Adjust aspect ratio
+        ax.set_xticks([])  # Remove x-axis tick marks
+        ax.set_yticks([])  # Remove y-axis tick marks
+        ax.set_xlabel('')
+        ax.set_ylabel('')
+
+        # Manually set the axes limits to exactly match the dimensions of the image
+        ax.set_xlim([0, xpixels])
+        ax.set_ylim([ypixels, 0])
+
+        # Gather data for each set of labels
+        x_label_data = self.get_label_data(self.x_labels)
+        y_label_data = self.get_label_data(self.y_labels)
+        secondary_y_label_data = self.get_label_data(self.secondary_y_labels)
+        additional_label_data = self.get_label_data(self.additional_labels)
+
+        # Find the maximum number of digits in y_labels
+        max_digits = max(len(data['text']) for data in y_label_data)
+
+        # Adjusting position for depth label based on digits
+        depth_label_offset = 5  # default
+        if max_digits >= 3:
+            depth_label_offset += 5 * (max_digits - 2)  # Increase offset for each extra digit beyond 2
+
+        vals_y = []
+        labs_y = []
+        for data in y_label_data:
+            y = data['y']
+            lab = data['text']
+            vals_y.append(y)
+            labs_y.append(lab)
+
+        max_depth = max(vals_y)
+        min_depth = min(vals_y)
+        depth_ticks = np.linspace(max_depth, min_depth, num=5)
+        ax.set_yticks(np.linspace(0, max_depth - min_depth, len(depth_ticks)))
+        ax.set_yticklabels(labs_y)
+
+        ax_sec = ax.twinx()
+
+        vals_sec_y = []
+        labs_sec_y = []
+        for data in secondary_y_label_data:
+            y = data['y']
+            lab = data['text']
+            vals_sec_y.append(y)
+            labs_sec_y.append(lab)
+
+        max_depth = max(vals_sec_y)
+        min_depth = min(vals_sec_y)
+        depth_ticks = np.linspace(max_depth, min_depth, num=5)
+        ax_sec.set_yticks(np.linspace(0, max_depth - min_depth, len(depth_ticks)))
+        ax_sec.set_yticklabels(labs_sec_y)
+        ax_sec.invert_yaxis()
+
+        vals_x = []
+        labs_x = []
+
+        for data in x_label_data:
+            x = data['x']
+            lab = data['text']
+            vals_x.append(x)
+            labs_x.append(lab)
+
+        min_x = min(vals_x)
+        max_x = max(vals_x)
+        dist_ticks = np.linspace(max_x, min_x, num=5)
+        ax.set_xticks(np.linspace(0, max_x - min_x, len(dist_ticks)))
+        ax.set_xticklabels(labs_x)
+
+        # Plotting additional labels
+        for data in additional_label_data:
+            if data['tag'] == 'dist_label':
+                ax.text(data['x'] - self.y_axis_x, data['y'] - 5, data['text'], ha='center', va='top', color='black', fontweight='bold')
+            elif data['tag'] == 'depth_label':
+                ax.text(data['x'] - self.y_axis_x - depth_label_offset, data['y'] - 10, data['text'], rotation=90,
+                        ha='center', va='center', color='black', fontweight='bold')
+            elif data['tag'] == 'sec_depth_label':
+                ax.text(data['x'] - self.y_axis_x + depth_label_offset, data['y'] - 10, data['text'], rotation=90,
+                        ha='center', va='center', color='black', fontweight='bold')
+
+        plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)  # Adjust subplot padding
+        fig.savefig(file_path, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+
+        self.lift()
+
+    def get_label_data(self, label_ids):
+        label_data = []
+        for label_id in label_ids:
+            text = self.section_canvas.itemcget(label_id, 'text')
+            coords = self.section_canvas.coords(label_id)
+            tags = self.section_canvas.gettags(label_id)
+            if coords:
+                # Adjust positions if necessary, depending on the anchor and label positioning in your app
+                x_pos, y_pos = coords[0], coords[1]
+                tag = tags[0] if tags else None
+                label_data.append({'text': text, 'x': x_pos, 'y': y_pos, 'tag': tag})
+
+        if label_data[0]['tag'] == 'label_x' or label_data[0]['tag'] == 'label_y':
+            label_data = self.recalculate_labels(label_data)
+
+        return label_data
+
+    def recalculate_labels(self, data):
+        axis = data[0]['tag']
+
+        if axis == 'label_x':
+            data = [data for data in data if self.y_axis_x <= data['x'] <= self.secondary_y_axis_x]
+        elif axis == 'label_y':
+            data = [data for data in data if 10 <= data['y'] <= self.x_axis_y]
+
+        lab1 = float(data[0]['text'])
+        lab2 = float(data[1]['text'])
+
+        if axis == 'label_x':
+            lab1_pos = float(data[0]['x'])
+            lab2_pos = float(data[1]['x'])
+            min_pixel = self.y_axis_x  # Starting position in pixels
+            max_pixel = self.secondary_y_axis_x  # Ending position in pixels
+        elif axis == 'label_y':
+            lab1_pos = float(data[0]['y'])
+            lab2_pos = float(data[1]['y'])
+            min_pixel = 10     # Starting position in pixels
+            max_pixel = self.x_axis_y  # Ending position in pixels
+
+        interval = lab2 - lab1
+        interval_y = lab2_pos - lab1_pos
+
+        pixel_per_meter = interval_y / interval
+
+        start_value = lab1 - (lab1_pos - min_pixel) / pixel_per_meter  # Adjust this calculation based on your data setup
+
+        num_labels = 5  # Total number of labels to display
+
+        # Calculate the distance between each label in pixels
+        total_pixel_distance = max_pixel - min_pixel
+        pixel_interval = total_pixel_distance / (num_labels - 1)
+
+        # Calculate new label interval and total range to cover
+        total_range = interval * (num_labels - 1)
+        label_interval = total_range / (num_labels - 1)
+
+        print(start_value, label_interval)
+
+        label_data_new = []
+
+        if axis == 'label_x':
+            y = data[0]['y']
+            tag = 'label_x'
+            for i in range(num_labels):
+                label_pos = min_pixel + i * pixel_interval
+                label_value = round(start_value + i * label_interval, 1)  # Increment by 0.5 meters each time
+
+                label_data_new.append({
+                    'text': str(label_value),
+                    'x': label_pos,
+                    'y': y,
+                    'tag': tag
+                })
+        elif axis == 'label_y':
+            x = data[0]['x']
+            tag = 'label_y'
+            for i in range(num_labels):
+                label_pos = min_pixel + i * pixel_interval
+                label_value = round(start_value + i * label_interval, 1)  # Increment by 0.5 meters each time
+
+                label_data_new.append({
+                    'text': str(label_value),
+                    'x': x,
+                    'y': label_pos,
+                    'tag': tag
+                })
+
+        return label_data_new
+
+
+    def apply_transformations(self, visible_left, visible_top, visible_right, visible_bottom):
+        # Example of applying transformations and updating the PIL and PhotoImage
+        if self.topo_corrected:
+            self.pil_section_image = Image.open(self.topo_image_path)
+        else:
+            self.pil_section_image = Image.open(self.image_path)
+
+        width = self.section_image.width()
+        height = self.section_image.height()
+
+        self.pil_section_image = self.pil_section_image.resize((width, height), Image.LANCZOS)
+
+        self.pil_section_image = self.pil_section_image.crop((visible_left, visible_top, visible_right, visible_bottom))  # Any transformation
+        return self.pil_section_image
+
 
     def add_topography(self):
         if len(self.dtm_files) == 1:
