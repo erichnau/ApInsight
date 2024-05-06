@@ -349,7 +349,6 @@ class SectionView(tk.Toplevel):
             self.section_canvas.tag_raise(label)
 
     def update_y_labels_for_full_image(self, primary=True):
-        print(self.y_labels)
         num_visible_labels = 5  # Desired number of labels in the visible area
 
         # Determine the visible height in pixels and calculate depth parameters
@@ -1154,101 +1153,6 @@ class SectionView(tk.Toplevel):
         plt.savefig(self.image_path, dpi=dpi, bbox_inches='tight', pad_inches=0, transparent=True)
         plt.close()
 
-    def save_section2(self):
-        file_path = filedialog.asksaveasfilename(defaultextension='.png', filetypes=[('PNG Image', '*.png')])
-        if file_path:
-            dpi = 300
-            plt.rcParams.update({'font.size': 10})
-            if self.topo_corrected:
-                xpixels, ypixels = self.topo_corr_data.shape[1], self.topo_corr_data.shape[0]
-            else:
-                xpixels, ypixels = self.section.shape[1], self.section.shape[0]
-
-            print('save 2:', xpixels*self.zoom*3, ypixels*self.zoom*3)
-            print(self.zoom)
-            figsize = (xpixels * self.zoom * 3) / dpi, (ypixels * self.zoom * 3) / dpi
-            fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
-
-            # Adjust the extent of the image
-            extent = [0, xpixels * self.zoom, ypixels * self.zoom, 0]
-
-            # Choose the interpolation method
-            interpolation_method = 'bicubic'
-
-            if self.topo_corrected:
-                ax.imshow(self.topo_corr_data, cmap='Greys', vmin=self.vmin, vmax=self.vmax, extent=extent,
-                          aspect='auto', interpolation=interpolation_method)
-            else:
-                ax.imshow(self.section, cmap='Greys', vmin=self.vmin, vmax=self.vmax, extent=extent,
-                          aspect='auto', interpolation=interpolation_method)
-
-            distance_ticks = np.linspace(0, self.dist, num=5)
-
-            ax.set_xlabel('Distance (m)')
-            ax.set_xticks(np.linspace(0, xpixels * self.zoom, len(distance_ticks)))
-            ax.set_xticklabels([f"{d:.1f}" for d in distance_ticks])
-            ax.set_xlim(0, xpixels * self.zoom)
-
-            if 'DTMfromGPR' in self.file_name:
-                # Use min and max elevation for y-axis labels
-                min_depth = self.frame_left.min_depth
-                max_depth = self.frame_left.max_depth
-                depth_ticks = np.linspace(max_depth, min_depth, num=5)
-                ax.set_yticks(np.linspace(0, ypixels * self.zoom, len(depth_ticks)))
-                ax.set_yticklabels([f"{d / 100:.1f}" for d in depth_ticks])
-                ax.set_ylabel('Elevation (m)')
-                ax.set_ylim(ypixels * self.zoom, 0)
-
-                ax_sec = ax.twinx()
-                ax_sec.set_yticks(np.linspace(0, ypixels * self.zoom, len(depth_ticks)))
-                ax_sec.set_yticklabels([f"{d / 100:.1f}" for d in depth_ticks])
-                ax_sec.set_ylabel('Elevation (m)')
-                ax_sec.set_ylim(ypixels * self.zoom, 0)
-
-            elif self.topo_corrected:
-                max_height = max(self.height_profile)
-                depth_ticks_for_primary_axis = np.linspace(0, self.depth_m,
-                                                           num=5)  # Adjust the number of ticks as needed
-                ax.set_yticks(np.linspace(0, ypixels * self.zoom, len(depth_ticks_for_primary_axis)))
-                ax.set_yticklabels(
-                    [f"{max_height - d:.1f}" for d in depth_ticks_for_primary_axis])  # Reverse depth for primary y-axis
-                ax.set_ylim(ypixels * self.zoom, 0)
-                ax.set_ylabel('Elevation (m)')
-
-                # Set up secondary y-axis (right side)
-                ax_sec = ax.twinx()
-                min_height = min(self.height_profile)
-                adjusted_height_ticks = np.linspace(max_height, min_height - self.depth_m, num=5)
-                ax_sec.set_yticks(np.linspace(0, ypixels * self.zoom, len(adjusted_height_ticks)))
-                ax_sec.set_ylim(ypixels * self.zoom, 0)
-                ax_sec.set_yticklabels([f"{h:.1f}" for h in adjusted_height_ticks])
-                ax_sec.set_ylabel('Elevation (m)')
-            else:
-                # Standard depth labels
-                depth_ticks = np.linspace(0, self.depth_m, num=5)
-                ax.set_yticks(np.linspace(0, ypixels * self.zoom, len(depth_ticks)))
-                ax.set_yticklabels([f"{d:.1f}" for d in depth_ticks])
-                ax.set_ylabel('Depth (m)')
-                ax.set_ylim(ypixels * self.zoom, 0)
-
-                ax_sec = ax.twinx()
-                ax_sec.set_yticks(np.linspace(0, ypixels * self.zoom, len(depth_ticks)))
-                ax_sec.set_yticklabels([f"{d:.1f}" for d in depth_ticks])
-                ax_sec.set_ylabel('Depth (m)')
-                ax_sec.set_ylim(ypixels * self.zoom, 0)
-
-            # Manually adjust the position of the axes
-            bottom_margin = 0.20  # Increase the bottom margin to 10%
-            left_margin = 0.05
-            right_margin = 0.05
-            top_margin = 0.05
-
-            fig.subplots_adjust(left=left_margin, right=1 - right_margin, top=1 - top_margin, bottom=bottom_margin)
-
-            plt.savefig(file_path, dpi=dpi, bbox_inches='tight')
-            plt.close()
-
-        self.lift()
 
     def get_visible_image_bounds(self):
         # Get the position of the image on the canvas
@@ -1276,6 +1180,7 @@ class SectionView(tk.Toplevel):
 
         return visible_left, visible_top, visible_right, visible_bottom
 
+
     def save_section(self):
         file_path = filedialog.asksaveasfilename(defaultextension='.png', filetypes=[('PNG Image', '*.png')])
         if not file_path:
@@ -1300,72 +1205,12 @@ class SectionView(tk.Toplevel):
 
         self.plot_image_with_labels(file_path=file_path)
 
-    '''def plot_image_with_labels(self, file_path):
-        # Gather data for each set of labels
-        x_label_data = self.get_label_data(self.x_labels)
-        y_label_data = self.get_label_data(self.y_labels)
-        secondary_y_label_data = self.get_label_data(self.secondary_y_labels)
-        additional_label_data = self.get_label_data(self.additional_labels)
-
-        # Convert the PIL image to a NumPy array for Matplotlib to handle
-        image_array = np.array(self.cropped_image)
-
-        xpixels, ypixels = image_array.shape[1], image_array.shape[0]
-        print('save 1:', xpixels, ypixels)
-
-        dpi = 300
-        plt.rcParams.update({'font.size': 10})
-
-        figsize = ((xpixels * 3) / dpi, (ypixels * 3) / dpi)
-
-        fig, ax = plt.subplots(dpi=dpi)
-        ax.imshow(image_array)
-
-        #plt.subplots_adjust(left=0.03, right=0.97, top=0.90, bottom=0.2)  # Minimize subplot padding
-
-        # Remove standard axes ticks
-        ax.set_xticks([])  # Remove x-axis tick marks
-        ax.set_yticks([])  # Remove y-axis tick marks
-
-        # Optionally remove axes labels too, if needed
-        ax.set_xlabel('')
-        ax.set_ylabel('')
-
-        # Plotting labels
-        for data in y_label_data:
-            if data['y'] <= self.x_axis_y and data['y'] >= 10:
-                ax.text(data['x'] - self.y_axis_x, data['y'] - 10, data['text'], color='black', ha='right', va='center')
-
-        for data in x_label_data:
-            if data['x'] <= self.secondary_y_axis_x and data['x'] >= self.y_axis_x:
-                ax.text(data['x'] - self.y_axis_x, data['y'], data['text'], color='black', ha='center', va='center')
-
-        for data in secondary_y_label_data:
-            if data['y'] <= self.x_axis_y and data['y'] >= 10:
-                ax.text(data['x'] - self.y_axis_x, data['y'] - 10, data['text'], color='black', ha='left', va='center')
-
-        for data in additional_label_data:
-            if data['tag'] == 'dist_label':
-                ax.text(data['x'], data['y'], data['text'], ha='center', va='top', color='black')
-            elif data['tag'] == 'depth_label':
-                ax.text(data['x'] - self.y_axis_x, data['y'] - 10, data['text'], rotation=90, ha='center', va='center',
-                        color='black')
-            elif data['tag'] == 'sec_depth_label':
-                ax.text(data['x'] - self.y_axis_x, data['y'] - 10, data['text'], rotation=90, ha='center', va='center',
-                        color='black')
-
-        # Save the plot to a file
-        fig.savefig(file_path, dpi=300)
-
-        # Close the plot to free up memory
-        plt.close(fig)'''
 
     def plot_image_with_labels(self, file_path):
         # Gather data for each set of labels (currently commented out)
         # Convert the PIL image to a NumPy array for Matplotlib to handle
         image_array = np.array(self.cropped_image)
 
-        print('Image shape: ', image_array.shape)
         xpixels, ypixels = image_array.shape[1], image_array.shape[0]
         dpi = 300
         plt.rcParams.update({'font.size': 10})
@@ -1516,8 +1361,6 @@ class SectionView(tk.Toplevel):
         # Calculate new label interval and total range to cover
         total_range = interval * (num_labels - 1)
         label_interval = total_range / (num_labels - 1)
-
-        print(start_value, label_interval)
 
         label_data_new = []
 
