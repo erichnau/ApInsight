@@ -223,6 +223,9 @@ class SectionView(tk.Toplevel):
         # Calculate the new dimensions
         new_width = int(self.section_image.width() * 1.1)
         new_height = int(self.section_image.height() * 1.1)
+
+        self.zoom *= 1.1
+
         resized_image = self.image.resize((new_width, new_height), Image.LANCZOS)
         self.section_image = ImageTk.PhotoImage(resized_image)
 
@@ -253,9 +256,15 @@ class SectionView(tk.Toplevel):
         else:
             viewport_center_x, viewport_center_y = cursor_position
 
+        self.zoom /= 1.1
+
         # Calculate the new dimensions, ensuring they do not fall below the actual initial dimensions
         new_width = max(int(self.section_image.width() / 1.1), self.actual_image_width)
         new_height = max(int(self.section_image.height() / 1.1), self.actual_image_height)
+
+        if new_width == self.actual_image_width:
+            self.zoom = self.init_zoom
+
         resized_image = self.image.resize((new_width, new_height), Image.LANCZOS)
         self.section_image = ImageTk.PhotoImage(resized_image)
 
@@ -579,6 +588,7 @@ class SectionView(tk.Toplevel):
         else:
             # Use the smaller of zoom_x and zoom_y for standard section
             self.zoom = min(zoom_x, zoom_y)
+            self.init_zoom = self.zoom
 
             # Resize the image
             self.resized_width = int(image_width * self.zoom)
@@ -595,7 +605,6 @@ class SectionView(tk.Toplevel):
                     self.orig_window_height = self.winfo_height()
             elif clear_topo:
                 self.adjust_window_size(clear_topo=True)
-
 
         # Calculate the position to place the image (accounting for the axis)
         x_offset = 50  # adjust based on the axis width
@@ -693,6 +702,7 @@ class SectionView(tk.Toplevel):
             self.orig_window_height = window_height
             # Set the canvas size to match the new window size or a specific area
 
+        self.section_canvas.configure(scrollregion=self.section_canvas.bbox('all'))
         self.section_canvas.update_idletasks()
 
     def update_axes(self, top_corr=False):
@@ -890,94 +900,157 @@ class SectionView(tk.Toplevel):
                                              fill=mask_color,
                                              outline=mask_color, tags=self.mask_tag)
 
-
     def draw_lines(self, event):
         x, y = event.x, event.y
 
-        # Adjust the x and y coordinates to the section data coordinates
-        x_offset = 50
-        y_offset = 10
-        x_data = (x - x_offset) / self.zoom
-        y_data = (y - y_offset) / self.zoom
+        # Get the current image position on the canvas
+        current_image_pos = self.section_canvas.coords(self.canvas_image)
+        image_left, image_top = current_image_pos[0], current_image_pos[1]
 
-        # Adjust for the bottom and right edges of the image
-        resized_width = int(self.image.width * self.zoom)
-        resized_height = int(self.image.height * self.zoom)
-        canvas_width = self.section_canvas.winfo_width()
-        canvas_height = self.section_canvas.winfo_height()
+        if x <= self.y_axis_x:
+            x = self.y_axis_x
+        elif x >= self.secondary_y_axis_x:
+            x = self.secondary_y_axis_x
 
-        if x >= canvas_width - x_offset:
-            x_data = self.image.width - (resized_width - x_data)  # Adjust x_data based on the actual image width
-        if y >= canvas_height - y_offset:
-            y_data = self.image.height - (resized_height - y_data)  # Adjust y_data based on the actual image height
+        if y <= 10:
+            y = 10
+        elif y >= self.x_axis_y:
+            y = self.x_axis_y
 
-        if x_offset <= x < resized_width + x_offset and y_offset <= y < resized_height + y_offset:
-            # Remove any previously drawn lines and height profile
+        # Calculate the actual x and y data coordinates, considering the current zoom and image position
+        x_data = (x - image_left) / self.zoom
+        y_data = (y - image_top) / self.zoom
+
+        # Ensure the calculations do not go beyond the image dimensions
+        x_data = max(0, min(self.section_image.width(), x_data))
+        y_data = max(0, min(self.section_image.height(), y_data))
+
+        # Bounds for drawing the lines based on the visible part of the image
+        image_right = image_left + self.section_image.width() * self.zoom
+        image_bottom = image_top + self.section_image.height() * self.zoom
+
+        # Check if the cursor is within the visible part of the image
+        if image_left <= x <= image_right and image_top <= y <= image_bottom:
+            # Clear any previously drawn lines
             self.section_canvas.delete('x_line')
             self.section_canvas.delete('y_line')
             self.section_canvas.delete('height_profile_line')
 
             # Draw vertical line
             if self.draw_x_line_var.get():
-                self.section_canvas.create_line(x, 0, x, self.section_canvas.winfo_height(), tags='x_line')
+                self.section_canvas.create_line(x, max(image_top, 0), x,
+                                                min(image_bottom, self.section_canvas.winfo_height()), tags='x_line')
 
-            # Draw horizontal line or plot height profile for topographically corrected section
+            # Draw horizontal line or plot height profile
             if self.draw_y_line_var.get():
                 if self.topo_corrected:
                     self.plot_height_profile(y, x)
                 else:
-                    self.section_canvas.create_line(0, y, self.section_canvas.winfo_width(), y, tags='y_line')
-
+                    self.section_canvas.create_line(max(image_left, 0), y,
+                                                    min(image_right, self.section_canvas.winfo_width()), y,
+                                                    tags='y_line')
 
             if self.communication_var.get():
                 self.update_depthslice_canvas(x_data, y_data)
 
         else:
             # Cursor is outside the image bounds, remove any previously drawn lines
-            self.section_canvas.delete('line')
+            self.section_canvas.delete('x_line')
+            self.section_canvas.delete('y_line')
+            self.section_canvas.delete('height_profile_line')
 
-    def plot_height_profile(self, y_data, x_data, from_ds_viewer=False):
+    def plot_height_profile(self, y_data, x_data):
         # Clear any previous height profile lines
         self.section_canvas.delete('height_profile_line')
 
+        # Get the image top left corner coordinates
+        image_left, image_top = self.section_canvas.coords(self.canvas_image)[0:2]
+
         min_height = min(self.downsampled_height_profile)
+        max_height = np.argmax(self.downsampled_height_profile)
 
         # Calculate the total length of the downsampled height profile in meters
         total_length_meters = len(self.downsampled_height_profile) * self.sampling_interval
 
-        # Calculate the scaling factor for both height and width based on the total length in meters
-        self.scale_factor = (self.secondary_y_axis_x - self.y_axis_x) / total_length_meters
+        # Calculate the scaling factor for converting x_data to index in the height profile array
+        self.scale_factor = self.section_image.width() / total_length_meters
 
         height_points = []
 
-        if from_ds_viewer:
-            closest_index = np.argmax(self.downsampled_height_profile) + 1
-        else:
-            # Calculate the closest index in the height profile for the given x-coordinate
-            closest_index = int(round((x_data - self.y_axis_x) / (self.sampling_interval * self.scale_factor)))
+        closest_index = int(round((x_data - image_left) / (self.sampling_interval * self.scale_factor)))
 
         # Calculate the y-coordinate offset for this height point based on the closest index
+        y_offset = (y_data + (self.downsampled_height_profile[closest_index - 1] - min_height) * self.scale_factor)
 
-        y_offset = (y_data + (self.downsampled_height_profile[closest_index-1] - min_height) * self.scale_factor)
-
-        # Iterate over each height value and its index in the self.height_profile
+        # Iterate over each height value and its index in the height profile
         for i, height in enumerate(self.downsampled_height_profile):
             # Calculate the x-coordinate for this height point
-            x_coord = self.y_axis_x + (i * self.sampling_interval) * self.scale_factor
+            x_coord = image_left + (i * self.sampling_interval) * self.scale_factor
 
             # Calculate the y-coordinate for this height point
             y_coord = y_offset - (height - min_height) * self.scale_factor
 
             # Append the calculated (x, y) point to the height_points list
-            height_points.append((x_coord, y_coord))
+            height_points.append((x_coord, y_coord, i))  # Include index
 
-        max_height_index = np.argmax(self.downsampled_height_profile)
-        y_data_max_height = height_points[max_height_index][1]
+        # Filter height_points to only include those within the visible x bounds
+        visible_height_points = [point for point in height_points if
+                                 self.y_axis_x <= point[0] <= self.secondary_y_axis_x]
 
-        self.y_max_height = y_data_max_height / self.zoom
+        if visible_height_points:
+            max_height_point = min(visible_height_points, key=lambda point: point[1])
+            y_data_max_height = max_height_point[1]
+            self.y_max_height = y_data_max_height / self.zoom
 
-        # Create a line using all the height points
-        self.section_canvas.create_line(height_points, fill='black', tags='height_profile_line')
+            self.y_coord_max_point = abs(((image_top - 10) / self.zoom)) + ((y_offset) - (self.downsampled_height_profile[max_height] - min_height) * self.scale_factor) / self.zoom
+
+            # Create a line using the visible height points without the index
+        self.section_canvas.create_line([(x, y) for x, y, _ in visible_height_points], fill='black',
+                                        tags='height_profile_line')
+
+
+    def plot_height_profile_from_ds(self, y_data):
+        # Clear any previous height profile lines
+        self.section_canvas.delete('height_profile_line')
+
+        # Get the image top left corner coordinates
+        image_left, image_top = self.section_canvas.coords(self.canvas_image)[0:2]
+
+        min_height = min(self.downsampled_height_profile)
+        max_height = np.argmax(self.downsampled_height_profile)
+
+        # Calculate the total length of the downsampled height profile in meters
+        total_length_meters = len(self.downsampled_height_profile) * self.sampling_interval
+
+        # Calculate the scaling factor for converting x_data to index in the height profile array
+        self.scale_factor = self.section_image.width() / total_length_meters
+
+        height_points = []
+
+        closest_index = np.argmax(self.downsampled_height_profile) + 1
+
+        # Calculate the y-coordinate offset for this height point based on the closest index
+        y_offset = (y_data + (self.downsampled_height_profile[closest_index - 1] - min_height) * self.scale_factor)
+
+        # Iterate over each height value and its index in the height profile
+        for i, height in enumerate(self.downsampled_height_profile):
+            # Calculate the x-coordinate for this height point
+            x_coord = image_left + (i * self.sampling_interval) * self.scale_factor
+
+            # Calculate the y-coordinate for this height point
+            y_coord = y_offset - (height - min_height) * self.scale_factor
+
+            # Append the calculated (x, y) point to the height_points list
+            height_points.append((x_coord, y_coord, i))  # Include index
+
+        # Filter height_points to only include those within the visible x bounds
+        visible_height_points = [point for point in height_points if
+                                 self.y_axis_x <= point[0] <= self.secondary_y_axis_x]
+
+            # Create a line using the visible height points without the index
+        self.section_canvas.create_line([(x, y) for x, y, _ in visible_height_points], fill='black',
+                                        tags='height_profile_line')
+
 
     def get_xy_from_section_coor(self, x):
         section_start = self.section_coor[0]  # Start point of the section
@@ -1021,12 +1094,11 @@ class SectionView(tk.Toplevel):
             canvas_height = self.section_canvas.winfo_height()
 
             x_pos = self.get_section_coor_from_xy(x, y)
-
-            x = (x_pos * self.zoom) + x_offset
+            adjusted_x = (x_pos * self.zoom) + self.section_canvas.coords(self.canvas_image)[0]
 
             self.section_canvas.delete('x_line')
 
-            self.section_canvas.create_line(x, 0, x, canvas_height, tags='x_line')
+            self.section_canvas.create_line(adjusted_x, 0, adjusted_x, canvas_height, tags='x_line')
 
     def get_depth_from_y_data(self, y_data):
         num_rows = len(self.section)
@@ -1036,6 +1108,7 @@ class SectionView(tk.Toplevel):
         return depth_value
 
     def get_y_data_from_depth(self, depth):
+        # Adjust y_data for zoom and pan
         num_rows = len(self.section)
         depth_range = self.depth_m
         y_data = (depth / (depth_range * 100)) * num_rows  # Calculate y_data based on depth value
@@ -1090,12 +1163,12 @@ class SectionView(tk.Toplevel):
             depth = self.get_depth_from_y_data_dtm(y)
         elif self.data_type == 2:
             if self.topo_corrected:
-                depth = (self.get_depth_from_y_data(self.y_max_height) - 5) / 100
+                depth = (self.get_depth_from_y_data(self.y_coord_max_point) - 5) / 100
             else:
                 depth = self.get_depth_from_y_data_ft(y)
 
         elif self.topo_corrected:
-            depth = self.get_depth_from_y_data(self.y_max_height) - 5
+            depth = self.get_depth_from_y_data(self.y_coord_max_point) - 5
         else:
             depth = self.get_depth_from_y_data(y)
 
@@ -1116,6 +1189,7 @@ class SectionView(tk.Toplevel):
                 y_data = self.get_y_data_from_depth_dtm(depth)
                 y_offset = 10
             elif self.topo_corrected:
+                depth = depth - 5
                 y_data = self.get_y_data_from_depth(depth)
                 y_offset = 0
             else:
@@ -1125,12 +1199,12 @@ class SectionView(tk.Toplevel):
 
 
             if self.topo_corrected:
-                y = (y_data * self.zoom) + y_offset
-                self.plot_height_profile(y, x_data=0, from_ds_viewer=True)
+                y = (y_data * self.zoom) + self.section_canvas.coords(self.canvas_image)[1]
+                self.plot_height_profile_from_ds(y)
             else:
                 canvas_width = self.section_canvas.winfo_width()
 
-                y = (y_data * self.zoom) + y_offset
+                y = (y_data * self.zoom) + self.section_canvas.coords(self.canvas_image)[1]
 
                 self.section_canvas.delete('y_line')
 
@@ -1411,6 +1485,7 @@ class SectionView(tk.Toplevel):
 
 
     def add_topography(self):
+        self.clear_topography()
         if len(self.dtm_files) == 1:
             dtm_data = next(iter(self.dtm_files.values()))
             self.perform_topographic_correction(dtm_data)
