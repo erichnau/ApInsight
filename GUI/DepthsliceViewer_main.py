@@ -225,6 +225,7 @@ class MenuBuilder:
             for child in self.frame_image.winfo_children():
                 child.destroy()
             self.frame_image.create_canvas()
+            self.frame_image.create_coordinates_label()
             self.frame_image.bindings()
             self.frame_image.scale = 1.0
             self.frame_left.first_image_inserted = False

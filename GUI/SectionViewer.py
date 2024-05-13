@@ -8,6 +8,7 @@ import numpy as np
 import platform
 
 from config_manager import ConfigurationManager
+from GUI.CoordinatesLabel import CoordinatesLabel
 
 monitors = get_monitors()
 screen_res_primary = [monitors[0].height, monitors[0].width]
@@ -67,6 +68,7 @@ class SectionView(tk.Toplevel):
         self.pan_offset_y = 0
 
         self.create_widgets()
+        self.coordinates_label = CoordinatesLabel(self.section_canvas)
         self.create_temporary_folder()
 
         self.create_image_from_section()
@@ -296,7 +298,7 @@ class SectionView(tk.Toplevel):
         canvas_height = self.section_canvas.winfo_height()
 
         # Calculate maximum allowed positions for the axes based on the canvas dimensions
-        max_x_axis_y = canvas_height - 50  # Subtracting 50 for padding
+        max_x_axis_y = canvas_height - 80  # Subtracting 50 for padding
         max_secondary_y_axis_x = canvas_width - 50  # Subtracting 50 for padding
 
         # Calculate new positions for the axes based on the zoomed image dimensions
@@ -672,7 +674,7 @@ class SectionView(tk.Toplevel):
         elif zoom:
             # Calculate maximum allowable dimensions
             max_width = int(screen_res_primary[1] * 1)
-            max_height = int(screen_res_primary[0] * 0.45)
+            max_height = int(screen_res_primary[0] * 0.55)
 
             current_image_width = self.section_image.width()
             current_image_height = self.section_image.height()
@@ -692,6 +694,11 @@ class SectionView(tk.Toplevel):
 
             final_height = max(height, self.orig_window_height)
             final_width = max(width, self.orig_window_width)
+
+            if final_height == max_height:
+                self.max_height_reached = True
+            else:
+                self.max_height_reached = False
 
             self.geometry(f"{final_width}x{final_height}")
 
@@ -959,6 +966,21 @@ class SectionView(tk.Toplevel):
             self.section_canvas.delete('y_line')
             self.section_canvas.delete('height_profile_line')
 
+
+    def get_closest_indx_height_profile(self, x_data):
+        # Get the image top left corner coordinates
+        image_left, image_top = self.section_canvas.coords(self.canvas_image)[0:2]
+
+        # Calculate the total length of the downsampled height profile in meters
+        total_length_meters = len(self.downsampled_height_profile) * self.sampling_interval
+
+        # Calculate the scaling factor for converting x_data to index in the height profile array
+        self.scale_factor = self.section_image.width() / total_length_meters
+
+        closest_index = int(round((x_data - image_left) / (self.sampling_interval * self.scale_factor)))
+
+        return closest_index
+
     def plot_height_profile(self, y_data, x_data):
         # Clear any previous height profile lines
         self.section_canvas.delete('height_profile_line')
@@ -978,6 +1000,7 @@ class SectionView(tk.Toplevel):
         height_points = []
 
         closest_index = int(round((x_data - image_left) / (self.sampling_interval * self.scale_factor)))
+        self.height = self.downsampled_height_profile[closest_index-1]
 
         # Calculate the y-coordinate offset for this height point based on the closest index
         y_offset = (y_data + (self.downsampled_height_profile[closest_index - 1] - min_height) * self.scale_factor)
@@ -1088,14 +1111,17 @@ class SectionView(tk.Toplevel):
 
         return section_x
 
-    def update_x_line(self, x, y):
+    def update_x_line(self, x, y, for_labels=False):
+        x_offset = 50
+        canvas_height = self.section_canvas.winfo_height()
+
+        x_pos = self.get_section_coor_from_xy(x, y)
+        adjusted_x = (x_pos * self.zoom) + self.section_canvas.coords(self.canvas_image)[0]
+
+        if for_labels:
+            return adjusted_x
+
         if self.draw_x_line_var.get():
-            x_offset = 50
-            canvas_height = self.section_canvas.winfo_height()
-
-            x_pos = self.get_section_coor_from_xy(x, y)
-            adjusted_x = (x_pos * self.zoom) + self.section_canvas.coords(self.canvas_image)[0]
-
             self.section_canvas.delete('x_line')
 
             self.section_canvas.create_line(adjusted_x, 0, adjusted_x, canvas_height, tags='x_line')
@@ -1172,11 +1198,26 @@ class SectionView(tk.Toplevel):
         else:
             depth = self.get_depth_from_y_data(y)
 
-
         self.frame_image.section_coor(x_coor, y_coor)
         self.frame_left.update_image_selection(depth)
 
-        self.frame_image.print_canvas_coordinates(section_x=x, section_y=y)
+        elevation = None
+        if self.topo_corrected:
+            elevation = self.height - depth/100
+
+        self.frame_image.coordinates_label.update_coordinates(x_coor, y_coor)
+        self.coordinates_label.update_coordinates(x_coor, y_coor, depth=depth, elevation=elevation)
+
+
+    def update_coordinates_label_from_ds(self, x, y, depth):
+        if self.topo_corrected:
+            x = self.update_x_line(x, y, for_labels=True)
+            indx = self.get_closest_indx_height_profile(x)
+            elevation = self.downsampled_height_profile[indx - 1] - depth/100
+        else:
+            elevation = None
+
+        self.coordinates_label.update_coordinates(x, y, depth=depth, elevation=elevation)
 
     def update_y_line(self, depth):
         if self.draw_y_line_var.get():

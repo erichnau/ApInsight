@@ -2,6 +2,8 @@ from tkinter import Frame, Label, Canvas
 from PIL import ImageTk, Image
 import math
 
+from GUI.CoordinatesLabel import CoordinatesLabel
+
 class ImageFrame(Frame):
     def __init__(self, master, frame_right, width, height, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
@@ -35,6 +37,9 @@ class ImageFrame(Frame):
 
         self.create_canvas()
 
+        self.coordinates_label = CoordinatesLabel(self.canvas)
+
+
     def data_variables(self, data):
         self.xpixels, self.ypixels, self.pixelsize, self.y_coor, self.x_coor = data.fld_file.xpixels, data.fld_file.ypixels, data.fld_file.pixelsize, data.fld_file.y_coor, data.fld_file.x_coor
 
@@ -46,11 +51,11 @@ class ImageFrame(Frame):
                              height=self.height)
         self.canvas.pack(fill='both', expand=True)
 
-        # Create a label widget for displaying the coordinates
-        self.coordinates_label = Label(self.canvas, text="", bd=1, relief='sunken', anchor='center', width=30, font=("Arial", 11))
-        self.coordinates_label.pack(side='bottom')
-
         self.canvas.bind('<Motion>', self.print_canvas_coordinates)
+
+    def create_coordinates_label(self):
+        self.coordinates_label = CoordinatesLabel(self.canvas)
+
 
     def bindings(self):
         # Unbind the previous bindings
@@ -196,7 +201,6 @@ class ImageFrame(Frame):
 
     def print_canvas_coordinates(self, event=None, section_x=None, section_y=None):
         if event:
-            # Get the canvas coordinates of the click event
             can_x = self.canvas.canvasx(event.x)
             can_y = self.canvas.canvasy(event.y)
         else:
@@ -204,9 +208,7 @@ class ImageFrame(Frame):
             can_y = section_y
 
         img_x, img_y = self.canvas_coor_to_global(can_x, can_y)
-
-        # Update the label with the calculated image coordinates
-        self.coordinates_label.configure(text=f" E={img_x:.2f}, N={img_y:.2f}")
+        self.coordinates_label.update_coordinates(img_x, img_y)  # Update using the new method
 
     def start_section(self, event):
         if self.draw_section_mode:
@@ -449,6 +451,15 @@ class ImageFrame(Frame):
             if self.section_view_active and self.frame_right.communication_var.get():
                 if self.frame_right.draw_x_line_var.get():
                     self.section_view_window.update_x_line(self.marker_x, self.marker_y)
+
+                self.update_section_coordinates_label()
+
+    def update_section_coordinates_label(self):
+        self.section_view_window.update_coordinates_label_from_ds(self.marker_x, self.marker_y, self.depth)
+
+    def set_depth(self, depth):
+        self.depth = depth
+        self.update_section_coordinates_label()
 
     def define_section_view(self, section_view):
         self.section_view_window = section_view

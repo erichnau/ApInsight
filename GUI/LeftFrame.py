@@ -303,12 +303,15 @@ class LeftFrame(Frame):
                 if self.data_type == 2:
                     depth_start, depth_end = self.image_dict.get(selected_file, (None, None))
                     self.section_view_window.update_y_line(depth_end*100)
+                    self.frame_image.set_depth(depth=depth_end)
                 elif 'DTMfromGPR' in selected_file:
                     depth_start, depth_end = self.image_dict.get(selected_file, (None, None))
                     self.section_view_window.update_y_line(depth_end/100)
+                    self.frame_image.set_depth(depth=depth_end)
                 else:
                     depth_start, depth_end = self.image_dict.get(selected_file, (None, None))
                     self.section_view_window.update_y_line(depth_end)
+                    self.frame_image.set_depth(depth=depth_end)
 
     def create_depth_slider(self):
         # Parent frame to hold the three columns
