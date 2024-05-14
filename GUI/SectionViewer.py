@@ -579,6 +579,7 @@ class SectionView(tk.Toplevel):
 
             self.resized_width = int(image_width * self.zoom)
             self.resized_height = int(image_height * self.zoom)
+
             self.resized_height_topo = self.resized_height
             resize_factor = self.resized_height_topo/self.image_height_orig
 
@@ -924,17 +925,18 @@ class SectionView(tk.Toplevel):
         elif y >= self.x_axis_y:
             y = self.x_axis_y
 
-        # Calculate the actual x and y data coordinates, considering the current zoom and image position
         x_data = (x - image_left) / self.zoom
         y_data = (y - image_top) / self.zoom
 
         # Ensure the calculations do not go beyond the image dimensions
-        x_data = max(0, min(self.section_image.width(), x_data))
-        y_data = max(0, min(self.section_image.height(), y_data))
+        x_data = max(0, min(self.section_image.width() / self.zoom, x_data))
+        y_data = max(0, min(self.section_image.height() / self.zoom, y_data))
 
         # Bounds for drawing the lines based on the visible part of the image
-        image_right = image_left + self.section_image.width() * self.zoom
-        image_bottom = image_top + self.section_image.height() * self.zoom
+        image_right = image_left + self.section_image.width()# * self.zoom
+        image_bottom = image_top + self.section_image.height()# * self.zoom
+
+        #print('Image right and bottom: ', image_right, image_bottom)
 
         # Check if the cursor is within the visible part of the image
         if image_left <= x <= image_right and image_top <= y <= image_bottom:
@@ -1202,20 +1204,34 @@ class SectionView(tk.Toplevel):
         self.frame_left.update_image_selection(depth)
 
         elevation = None
+        if self.data_type == 2:
+            depth = depth*100
         if self.topo_corrected:
             elevation = self.height - depth/100
+        if 'DTMfromGPR' in self.file_name:
+            elevation = depth / 100
+            depth = self.depth_from_ds
 
         self.frame_image.coordinates_label.update_coordinates(x_coor, y_coor)
         self.coordinates_label.update_coordinates(x_coor, y_coor, depth=depth, elevation=elevation)
 
 
+    def set_depth_value(self, depth_start, elevation):
+        self.depth_from_ds = depth_start
+        self.elevation = elevation
+
+
     def update_coordinates_label_from_ds(self, x, y, depth):
+        elevation = None
+        if self.data_type == 2:
+            depth = depth * 100
         if self.topo_corrected:
             x = self.update_x_line(x, y, for_labels=True)
             indx = self.get_closest_indx_height_profile(x)
-            elevation = self.downsampled_height_profile[indx - 1] - depth/100
-        else:
-            elevation = None
+            elevation = self.downsampled_height_profile[indx - 1] - depth / 100
+        elif 'DTMfromGPR' in self.file_name:
+            depth = self.depth_from_ds
+            elevation = self.elevation
 
         self.coordinates_label.update_coordinates(x, y, depth=depth, elevation=elevation)
 

@@ -419,6 +419,8 @@ class LeftFrame(Frame):
                 lower_depth = int(val) * self.depth_interval
                 upper_depth = lower_depth + self.depth_interval
                 self.depth_label.config(text=f"Elevation: \n {depth_start/100}-{depth_end/100} m \n\n Depth: \n {lower_depth}-{upper_depth} cm ")
+                if self.section_view_active:
+                    self.section_view_window.set_depth_value(upper_depth, depth_start/100)
             else:
                 self.depth_label.config(text=f"Depth: \n {depth_start}-{depth_end} cm")
 
