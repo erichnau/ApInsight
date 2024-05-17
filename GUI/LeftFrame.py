@@ -25,6 +25,9 @@ class LeftFrame(Frame):
 
         self.bold_font = font.Font(weight="bold", size=10)
 
+    def set_top_frame_tools(self, tf):
+        self.tf = tf
+
     def create_checkboxes(self, projects):
         self.depth_label = None
         self.clear_checkboxes()

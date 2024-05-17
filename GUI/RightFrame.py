@@ -5,9 +5,12 @@ import os
 import re
 import shapefile
 
-from GUI.SectionViewer import SectionView
+
 from GUI.error_handling import show_error_dialog
 from GPR_func._2D_vertical import check_section_array
+
+#from GUI.SectionViewer_old import SectionView
+from GUI.SectionViewer.SectionView import SectionView
 
 
 class RightFrame(Frame):

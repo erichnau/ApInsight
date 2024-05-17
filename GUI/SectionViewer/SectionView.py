@@ -8,7 +8,6 @@ import numpy as np
 import platform
 
 from config_manager import ConfigurationManager
-from GUI.CoordinatesLabel import CoordinatesLabel
 
 monitors = get_monitors()
 screen_res_primary = [monitors[0].height, monitors[0].width]
@@ -17,10 +16,14 @@ global window_width, window_height
 window_width = int(screen_res_primary[1]*1)
 window_height = int(screen_res_primary[0]*0.50)
 
+from GUI.SectionViewer.TopFrameTools import TopFrameTools
+
 class SectionView(tk.Toplevel):
     def __init__(self, section, depth_m, dist, project_file_path, sampling_interval, dtm_files, section_coor, pixelsize_z, frame_image, frame_left, top_frame, data_type, top_removed, bottom_removed, depth_table, frame_right):
         super().__init__()
         self.section = section
+
+        self.section_view = self
 
         self.title("Section View")
         if platform.system() =='Windows':
@@ -67,74 +70,38 @@ class SectionView(tk.Toplevel):
         self.pan_offset_x = 0
         self.pan_offset_y = 0
 
+        self.create_top_frame()
         self.create_widgets()
-        self.coordinates_label = CoordinatesLabel(self.section_canvas)
+        self._set_image_canvas()
+
         self.create_temporary_folder()
 
         self.create_image_from_section()
         self.display_section(self.image_path)
 
+        self._set_canvas_variables()
+
+    def create_top_frame(self):
+        self.tf = TopFrameTools(self, self.section, self.section_coor, self.dist, self.file_name, self.data_type, self.depth_m, self.pixelsize_z, self.frame_image, self.frame_left)
+        self.tf.pack(side="top", fill="x")
+
+    def _set_image_canvas(self):
+        self.tf.section_canvas = self.section_canvas
+
+    def _set_canvas_variables(self):
+        self.tf.canvas_image = self.canvas_image
+        self.tf.x_axis_y = self.x_axis_y
+        self.tf.y_axis_x = self.y_axis_x
+        self.tf.secondary_y_axis_x = self.secondary_y_axis_x
+        self.tf.zoom = self.zoom
+        self.tf.section_image = self.section_image
+        self.tf.section_view = self.section_view
+        self.tf.image = self.image
+        self.tf.set_coordinates_label()
+        self.tf.set_zoom_controls()
+
+
     def create_widgets(self):
-        # Create a top frame with buttons
-        self.top_frame_section_window = tk.Frame(self)
-        self.top_frame_section_window.pack(side="top", fill="x")
-
-        # Add buttons or other widgets as needed
-        # For example:
-        save_button = tk.Button(self.top_frame_section_window, text="Export image", command=self.save_section)
-        save_button.pack(side="left", padx=5, pady=5)
-
-        topo_correction = tk.Button(self.top_frame_section_window, text='Add topography', command=self.add_topography)
-        topo_correction.pack(side='left', padx=5, pady=5)
-
-        clear_topo = tk.Button(self.top_frame_section_window, text='Clear topography', command=self.clear_topography)
-        clear_topo.pack(side='left', padx=5, pady=5)
-
-        # Create check buttons for drawing lines and communication
-        self.draw_y_line_var = tk.BooleanVar(value=True)
-        self.draw_x_line_var = tk.BooleanVar(value=True)
-        self.communication_var = tk.BooleanVar(value=True)
-
-        draw_x_line_checkbox = tk.Checkbutton(self.top_frame_section_window, text="Draw X Line", variable=self.draw_y_line_var)
-        draw_x_line_checkbox.pack(side="left", padx=5, pady=5)
-
-        draw_y_line_checkbox = tk.Checkbutton(self.top_frame_section_window, text="Draw Y Line", variable=self.draw_x_line_var)
-        draw_y_line_checkbox.pack(side="left", padx=5, pady=5)
-
-        communication_checkbox = tk.Checkbutton(self.top_frame_section_window, text="Enable Communication", variable=self.communication_var)
-        communication_checkbox.pack(side="left", padx=5, pady=5)
-
-        greyscale_frame = tk.Frame(self.top_frame_section_window, highlightcolor='black', borderwidth=1, relief='solid', pady=5, padx=5)
-        greyscale_frame.pack(side= 'left', padx=10, pady=5)
-
-        greyscale_label = tk.Label(greyscale_frame, text='Greyscale range')
-        greyscale_label.pack()
-
-        # vmin entry and arrow buttons
-        self.vmin_var = tk.IntVar(value=self.vmin)  # Assuming self.vmin is defined
-        vmin_entry = tk.Entry(greyscale_frame, width=4, textvariable=self.vmin_var)
-        vmin_entry.pack(side="left")
-        vmin_up_button = tk.Button(greyscale_frame, text="▲", command=lambda: self.adjust_vmin(1))
-        vmin_up_button.pack(side="left")
-        vmin_down_button = tk.Button(greyscale_frame, text="▼", command=lambda: self.adjust_vmin(-1))
-        vmin_down_button.pack(side="left")
-
-        # vmax entry and arrow buttons
-        self.vmax_var = tk.IntVar(value=self.vmax)  # Assuming self.vmax is defined
-        vmax_entry = tk.Entry(greyscale_frame, width=4, textvariable=self.vmax_var)
-        vmax_entry.pack(side="left")
-        vmax_up_button = tk.Button(greyscale_frame, text="▲", command=lambda: self.adjust_vmax(1))
-        vmax_up_button.pack(side="left")
-        vmax_down_button = tk.Button(greyscale_frame, text="▼", command=lambda: self.adjust_vmax(-1))
-        vmax_down_button.pack(side="left")
-
-        default_button = tk.Button(greyscale_frame, text="Default", command=self.reset_to_default_greyscale)
-        default_button.pack(side='left', padx=5, pady=5)
-
-        # Bind entry updates
-        vmin_entry.bind('<Return>', self.update_vmin_vmax)
-        vmax_entry.bind('<Return>', self.update_vmin_vmax)
-
         # Calculate the size of the image frame
         window_width = self.winfo_width()
         window_height = self.winfo_height()
@@ -155,155 +122,19 @@ class SectionView(tk.Toplevel):
         self.secondary_y_labels = []
         self.additional_labels = []
 
-        if 'DTMfromGPR' in self.file_name:
-            topo_correction.config(state='disabled')
-            clear_topo.config(state='disabled')
-
-        self.create_zoom_controls()
-
-    def create_zoom_controls(self):
-        zoom_in_button = tk.Button(self.top_frame_section_window, text="+", command=self.zoom_in)
-        zoom_in_button.pack(side="left", padx=5, pady=5)
-        zoom_out_button = tk.Button(self.top_frame_section_window, text="-", command=self.zoom_out)
-        zoom_out_button.pack(side="left", padx=5, pady=5)
-        # Bind right-click drag for panning
-        self.section_canvas.bind("<Button-3>", self.start_pan)
-        self.section_canvas.bind("<B3-Motion>", self.pan_image)
-
-    def start_pan(self, event):
-        self.init_image_position = (event.x, event.y)  # Capture initial position
-
-    def pan_image(self, event):
-        dx = (event.x - self.init_image_position[0])
-        dy = (event.y - self.init_image_position[1])
-
-        self.pan_offset_x += dx
-        self.pan_offset_y += dy
-
-        actual_image_width = self.section_image.width()
-        actual_image_height = self.section_image.height()
-
-        current_pos = self.section_canvas.coords(self.canvas_image)
-        new_x = current_pos[0] + dx
-        new_y = current_pos[1] + dy
-
-        if new_x > self.image_left_bound:
-            dx = self.image_left_bound - current_pos[0]
-        if new_x + actual_image_width < self.secondary_y_axis_x:
-            dx = self.secondary_y_axis_x - 1 - (current_pos[0] + actual_image_width)
-
-        if new_y > self.image_top_bound:
-            dy = self.image_top_bound - current_pos[1]
-        elif new_y + actual_image_height < self.x_axis_y:
-            dy = self.x_axis_y - 2 - (current_pos[1] + actual_image_height)
-
-        self.section_canvas.move(self.canvas_image, dx, dy)
-        self.init_image_position = (event.x, event.y)
-        self.update_axes_based_on_pan(dx, dy)
-
-    def update_axes_based_on_pan(self, dx, dy):
-        # Adjust the x-axis labels based on the image movement, skip the last label
-        for label in self.x_labels[:-1]:  # The '[:-1]' slice selects all but the last item
-            self.section_canvas.move(label, dx, 0)
-
-        # Adjust the y-axis labels based on the image movement, skip the last label
-        for label in self.y_labels[:-1]:  # Similarly, '[:-1]' skips the last item
-            self.section_canvas.move(label, 0, dy)
-
-        # Do the same for secondary y-axis labels if present, skip the last label
-        for label in self.secondary_y_labels[:-1]:
-            self.section_canvas.move(label, 0, dy)
-
-    def zoom_in(self, cursor_position=None):
-        # Get the current center of the viewport or cursor position
-        if cursor_position is None:
-            viewport_center_x = self.section_canvas.canvasx(self.section_canvas.winfo_width() / 2)
-            viewport_center_y = self.section_canvas.canvasy(self.section_canvas.winfo_height() / 2)
-        else:
-            viewport_center_x, viewport_center_y = cursor_position
-
-        # Calculate the new dimensions
-        new_width = int(self.section_image.width() * 1.1)
-        new_height = int(self.section_image.height() * 1.1)
-
-        self.zoom *= 1.1
-
-        resized_image = self.image.resize((new_width, new_height), Image.LANCZOS)
-        self.section_image = ImageTk.PhotoImage(resized_image)
-
-        # Calculate the new position based on the zoom center
-        current_pos = self.section_canvas.coords(self.canvas_image)
-        new_x = viewport_center_x - (viewport_center_x - current_pos[0]) * 1.1
-        new_y = viewport_center_y - (viewport_center_y - current_pos[1]) * 1.1
-
-        # Apply boundary constraints
-        new_x = min(max(new_x, self.secondary_y_axis_x - new_width), self.image_left_bound)
-        new_y = min(max(new_y, self.x_axis_y - new_height), self.image_top_bound)
-
-        # Update the image position and zoom
-        self.section_canvas.itemconfig(self.canvas_image, image=self.section_image)
-        self.section_canvas.coords(self.canvas_image, new_x, new_y)
-
-        self.adjust_window_size(zoom=True)
-        self.update_axes_after_zoom()
-
-        fake_event = FakeEvent(viewport_center_x, viewport_center_y)
-        self.pan_image(fake_event)
-
-    def zoom_out(self, cursor_position=None):
-        # Get the current center of the viewport or cursor position
-        if cursor_position is None:
-            viewport_center_x = self.section_canvas.canvasx(self.section_canvas.winfo_width() / 2)
-            viewport_center_y = self.section_canvas.canvasy(self.section_canvas.winfo_height() / 2)
-        else:
-            viewport_center_x, viewport_center_y = cursor_position
-
-        self.zoom /= 1.1
-
-        # Calculate the new dimensions, ensuring they do not fall below the actual initial dimensions
-        new_width = max(int(self.section_image.width() / 1.1), self.actual_image_width)
-        new_height = max(int(self.section_image.height() / 1.1), self.actual_image_height)
-
-        if new_width == self.actual_image_width:
-            self.zoom = self.init_zoom
-
-        resized_image = self.image.resize((new_width, new_height), Image.LANCZOS)
-        self.section_image = ImageTk.PhotoImage(resized_image)
-
-        # Calculate the new position to maintain the zoom center
-        current_pos = self.section_canvas.coords(self.canvas_image)
-        shift_x = (self.section_image.width() - new_width) / 2
-        shift_y = (self.section_image.height() - new_height) / 2
-        new_x = viewport_center_x - (viewport_center_x - current_pos[0]) * (1 / 1.1)
-        new_y = viewport_center_y - (viewport_center_y - current_pos[1]) * (1 / 1.1)
-
-        # Apply boundary constraints
-        new_x = min(max(new_x, self.secondary_y_axis_x - new_width), self.image_left_bound)
-        new_y = min(max(new_y, self.x_axis_y - new_height), self.image_top_bound)
-
-        # Update the image position and zoom
-        self.section_canvas.itemconfig(self.canvas_image, image=self.section_image)
-        self.section_canvas.coords(self.canvas_image, new_x, new_y)
-
-        self.adjust_window_size(zoom=True)
-        self.update_axes_after_zoom()
-
-        fake_event = FakeEvent(viewport_center_x, viewport_center_y)
-        self.pan_image(fake_event)
-
 
     def update_axes_after_zoom(self):
         # Get the current canvas (or window) height and width
-        canvas_width = self.section_canvas.winfo_width()
-        canvas_height = self.section_canvas.winfo_height()
+        canvas_width = self.tf.section_canvas.winfo_width()
+        canvas_height = self.tf.section_canvas.winfo_height()
 
         # Calculate maximum allowed positions for the axes based on the canvas dimensions
         max_x_axis_y = canvas_height - 80  # Subtracting 50 for padding
         max_secondary_y_axis_x = canvas_width - 50  # Subtracting 50 for padding
 
         # Calculate new positions for the axes based on the zoomed image dimensions
-        proposed_x_axis_y = self.section_image.height() + 12
-        proposed_secondary_y_axis_x = self.y_axis_x + self.section_image.width()
+        proposed_x_axis_y = self.tf.section_image.height() + 12
+        proposed_secondary_y_axis_x = self.y_axis_x + self.tf.section_image.width()
 
         # Apply the maximum constraints
         self.x_axis_y = min(proposed_x_axis_y, max_x_axis_y)
@@ -538,20 +369,25 @@ class SectionView(tk.Toplevel):
             if top_corr:
                 self.resize_image_to_canvas(top_corr=True)
                 self.topo_corrected = True
+                self.tf.topo_corrected = True
             else:
                 if clear_topo:
                     self.resize_image_to_canvas(clear_topo=True)
                     self.topo_corrected = False
+                    self.tf.topo_corrected = False
                 else:
                     self.resize_image_to_canvas()
                     self.topo_corrected = False
+                    self.tf.topo_corrected = False
         else:
             if top_corr:
                 self.resize_image_to_canvas(top_corr=True, update_vmin_vmax=True)
                 self.topo_corrected = True
+                self.tf.topo_corrected = True
             else:
                 self.resize_image_to_canvas(update_vmin_vmax=True)
                 self.topo_corrected = False
+                self.tf.topo_corrected = False
 
 
     def resize_image_to_canvas(self, top_corr=False, update_vmin_vmax=False, clear_topo=False):
@@ -627,7 +463,7 @@ class SectionView(tk.Toplevel):
         else:
             self.update_axes()
 
-        self.section_canvas.bind('<Motion>', self.draw_lines)
+        self.section_canvas.bind('<Motion>', self.tf.draw_lines)
 
         self.init_image_pos = self.section_canvas.coords(self.canvas_image)
 
@@ -659,7 +495,7 @@ class SectionView(tk.Toplevel):
 
 
     def adjust_window_size(self, clear_topo=False, zoom=False):
-        top_frame_width = self.calculate_frame_width(self.top_frame_section_window) + 50
+        top_frame_width = self.calculate_frame_width(self.tf) + 50
 
         # Determine the width for the section image
         image_frame_width = self.resized_width + 200
@@ -677,15 +513,15 @@ class SectionView(tk.Toplevel):
             max_width = int(screen_res_primary[1] * 1)
             max_height = int(screen_res_primary[0] * 0.55)
 
-            current_image_width = self.section_image.width()
-            current_image_height = self.section_image.height()
+            current_image_width = self.tf.section_image.width()
+            current_image_height = self.tf.section_image.height()
 
             # Determine the width for the section image including some padding
             image_frame_width = current_image_width + 200
             image_frame_height = current_image_height + 200
 
             # Calculate the total width and height required by the window
-            top_frame_width = self.calculate_frame_width(self.top_frame_section_window) + 50
+            top_frame_width = self.calculate_frame_width(self.tf) + 50
             total_width = max(top_frame_width, image_frame_width)
             total_height = image_frame_height
 
@@ -908,65 +744,6 @@ class SectionView(tk.Toplevel):
                                              fill=mask_color,
                                              outline=mask_color, tags=self.mask_tag)
 
-    def draw_lines(self, event):
-        x, y = event.x, event.y
-
-        # Get the current image position on the canvas
-        current_image_pos = self.section_canvas.coords(self.canvas_image)
-        image_left, image_top = current_image_pos[0], current_image_pos[1]
-
-        if x <= self.y_axis_x:
-            x = self.y_axis_x
-        elif x >= self.secondary_y_axis_x:
-            x = self.secondary_y_axis_x
-
-        if y <= 10:
-            y = 10
-        elif y >= self.x_axis_y:
-            y = self.x_axis_y
-
-        x_data = (x - image_left) / self.zoom
-        y_data = (y - image_top) / self.zoom
-
-        # Ensure the calculations do not go beyond the image dimensions
-        x_data = max(0, min(self.section_image.width() / self.zoom, x_data))
-        y_data = max(0, min(self.section_image.height() / self.zoom, y_data))
-
-        # Bounds for drawing the lines based on the visible part of the image
-        image_right = image_left + self.section_image.width()# * self.zoom
-        image_bottom = image_top + self.section_image.height()# * self.zoom
-
-        #print('Image right and bottom: ', image_right, image_bottom)
-
-        # Check if the cursor is within the visible part of the image
-        if image_left <= x <= image_right and image_top <= y <= image_bottom:
-            # Clear any previously drawn lines
-            self.section_canvas.delete('x_line')
-            self.section_canvas.delete('y_line')
-            self.section_canvas.delete('height_profile_line')
-
-            # Draw vertical line
-            if self.draw_x_line_var.get():
-                self.section_canvas.create_line(x, max(image_top, 0), x,
-                                                min(image_bottom, self.section_canvas.winfo_height()), tags='x_line')
-
-            # Draw horizontal line or plot height profile
-            if self.draw_y_line_var.get():
-                if self.topo_corrected:
-                    self.plot_height_profile(y, x)
-                else:
-                    self.section_canvas.create_line(max(image_left, 0), y,
-                                                    min(image_right, self.section_canvas.winfo_width()), y,
-                                                    tags='y_line')
-
-            if self.communication_var.get():
-                self.update_depthslice_canvas(x_data, y_data)
-
-        else:
-            # Cursor is outside the image bounds, remove any previously drawn lines
-            self.section_canvas.delete('x_line')
-            self.section_canvas.delete('y_line')
-            self.section_canvas.delete('height_profile_line')
 
 
     def get_closest_indx_height_profile(self, x_data):
@@ -1077,23 +854,6 @@ class SectionView(tk.Toplevel):
                                         tags='height_profile_line')
 
 
-    def get_xy_from_section_coor(self, x):
-        section_start = self.section_coor[0]  # Start point of the section
-        section_stop = self.section_coor[1]  # Stop point of the section
-        x /= round(self.section.shape[1]/self.dist)
-        # Calculate the total distance along the section
-        section_distance = ((section_stop[0] - section_start[0]) ** 2 + (
-                    section_stop[1] - section_start[1]) ** 2) ** 0.5
-
-        # Calculate the ratio of the given x_data relative to the total distance
-        ratio = x / section_distance
-
-        # Interpolate the x and y coordinates along the section
-        x = round(section_start[0] + (section_stop[0] - section_start[0]) * ratio, 3)
-        y = round(section_start[1] + (section_stop[1] - section_start[1]) * ratio, 3)
-
-        return x, y
-
     def get_section_coor_from_xy(self, x, y):
         section_start = self.section_coor[0]  # Start point of the section
         section_stop = self.section_coor[1]  # Stop point of the section
@@ -1123,17 +883,12 @@ class SectionView(tk.Toplevel):
         if for_labels:
             return adjusted_x
 
-        if self.draw_x_line_var.get():
+        if self.tf.draw_x_line_var.get():
             self.section_canvas.delete('x_line')
 
             self.section_canvas.create_line(adjusted_x, 0, adjusted_x, canvas_height, tags='x_line')
 
-    def get_depth_from_y_data(self, y_data):
-        num_rows = len(self.section)
-        depth_range = self.depth_m
-        depth_value = int((y_data / num_rows) * depth_range * 100)  # Multiply by 100 to convert to centimeters
-        depth_value = round(depth_value / (self.pixelsize_z * 100)) * (self.pixelsize_z * 100)   # Round to the nearest 5 cm step
-        return depth_value
+
 
     def get_y_data_from_depth(self, depth):
         # Adjust y_data for zoom and pan
@@ -1184,36 +939,7 @@ class SectionView(tk.Toplevel):
 
         return round(closest_depth, 3)
 
-    def update_depthslice_canvas(self, x, y):
-        x_coor, y_coor = self.get_xy_from_section_coor(x)
 
-        if 'DTMfromGPR' in self.file_name:
-            depth = self.get_depth_from_y_data_dtm(y)
-        elif self.data_type == 2:
-            if self.topo_corrected:
-                depth = (self.get_depth_from_y_data(self.y_coord_max_point) - 5) / 100
-            else:
-                depth = self.get_depth_from_y_data_ft(y)
-
-        elif self.topo_corrected:
-            depth = self.get_depth_from_y_data(self.y_coord_max_point) - 5
-        else:
-            depth = self.get_depth_from_y_data(y)
-
-        self.frame_image.section_coor(x_coor, y_coor)
-        self.frame_left.update_image_selection(depth)
-
-        elevation = None
-        if self.data_type == 2:
-            depth = depth*100
-        if self.topo_corrected:
-            elevation = self.height - depth/100
-        if 'DTMfromGPR' in self.file_name:
-            elevation = depth / 100
-            depth = self.depth_from_ds
-
-        self.frame_image.coordinates_label.update_coordinates(x_coor, y_coor)
-        self.coordinates_label.update_coordinates(x_coor, y_coor, depth=depth, elevation=elevation)
 
 
     def set_depth_value(self, depth_start, elevation):
@@ -1233,10 +959,10 @@ class SectionView(tk.Toplevel):
             depth = self.depth_from_ds
             elevation = self.elevation
 
-        self.coordinates_label.update_coordinates(x, y, depth=depth, elevation=elevation)
+        self.tf.coordinates_label.update_coordinates(x, y, depth=depth, elevation=elevation)
 
     def update_y_line(self, depth):
-        if self.draw_y_line_var.get():
+        if self.tf.draw_y_line_var.get():
 
             if self.data_type == 2:
                 depth = depth
@@ -1660,12 +1386,6 @@ class SectionView(tk.Toplevel):
         plt.close()
 
         self.display_section(self.topo_image_path, top_corr=True)
-
-
-class FakeEvent:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
 
 
 
