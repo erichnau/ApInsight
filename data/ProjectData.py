@@ -4,6 +4,7 @@ import rasterio
 import xarray as xr
 import numpy as np
 from scipy.ndimage import gaussian_filter
+import matplotlib.pyplot as plt
 
 from data.data_structure import load_json
 from GPR_func import read_fld
@@ -283,3 +284,99 @@ class FldData:
 
         return smoothed_data
 
+
+class ArbSectionData():
+    def __init__(self, section_data, depth_m, dist, sampling_intervael, dtm_files, section_coor, pixelsize_z, data_type, top_removed, bottom_removed, depth_table):
+        self.section_data = section_data
+        self.depth_m = depth_m
+        self.dist = dist
+        self.sampling_interval = sampling_intervael
+        self.dtm_files = dtm_files
+        self.section_coor = section_coor
+        self.pixelsize_z = pixelsize_z
+        self.data_type = data_type
+        self.top_removed = top_removed
+        self.bottom_removed = bottom_removed
+        self.depth_table = depth_table
+
+
+    def create_image_from_section(self, temp_folder_path, vmin, vmax):
+        image_path = os.path.join(temp_folder_path, "section_image_temp.png")
+
+        dpi = 100
+        xpixels, ypixels = self.section_data.shape[1], self.section_data.shape[0]
+        figsize = xpixels / dpi, ypixels / dpi
+
+        fig = plt.figure(figsize=figsize, dpi=dpi)
+        ax = fig.add_axes([0, 0, 1, 1])
+        ax.axis('off')  # Turn off the axis
+
+        ax.imshow(self.section_data, cmap='Greys', vmin=vmin, vmax=vmax, interpolation='bilinear')
+
+        # Save the section as an image file
+        plt.savefig(image_path, dpi=dpi, bbox_inches='tight', pad_inches=0, transparent=True)
+        plt.close()
+
+        return image_path
+
+    def perform_topographic_correction(self, dtm_data, folder_path, vmin, vmax):
+        downsampled_height_profile, height_profile = self.topographic_correction(dtm_data)
+        topo_image_path = self.save_topo_corrected_section(folder_path, vmin, vmax)
+
+        return self.topo_corr_data, downsampled_height_profile, height_profile, topo_image_path
+
+    def topographic_correction(self, dtm_data):
+        dtm = dtm_data
+
+        height_profile = dtm.create_height_profile(self.section_coor, self.section_data.shape[1])
+
+        num_columns = self.section_data.shape[1]
+        num_points = height_profile.shape[0]
+
+        # Downsample the height profile to match the number of columns in self.section
+        step_size = int(num_points / num_columns)
+        downsampled_height_profile = height_profile[::step_size]
+
+
+        max_elev_diff = int((np.max(downsampled_height_profile) - np.min(downsampled_height_profile)) * (1 / self.pixelsize_z))
+        tshift = (np.max(downsampled_height_profile) - downsampled_height_profile) * (1 / self.pixelsize_z)
+
+        # Adjust the time shifts so that the highest elevation becomes zero time
+        tshift = tshift.astype(int)  # Convert each element of the array to integers
+
+        # Create a new data matrix with NaN padding
+        self.topo_corr_data = np.empty((self.section_data.shape[0] + max_elev_diff, num_columns))
+        self.topo_corr_data[:] = np.nan
+
+        for i in range(num_columns):
+            shift_amount = tshift[i]
+
+            # Add NaN padding to the bottom of the column
+            padded_column = np.pad(self.section_data[:, i], (0, max_elev_diff), mode='constant', constant_values=np.nan)
+
+            # Perform the roll operation
+            shifted_column = np.roll(padded_column, shift_amount)
+
+            # Insert the shifted column into newdata
+            self.topo_corr_data[:, i] = shifted_column[:self.topo_corr_data.shape[0]]
+
+        return downsampled_height_profile, height_profile
+
+    def save_topo_corrected_section(self, folder_path, vmin, vmax):
+        topo_image_path = os.path.join(folder_path, "topo_section_image_temp.png")
+
+        dpi = 100
+        xpixels, ypixels = self.topo_corr_data.shape[1], self.topo_corr_data.shape[0]
+        figsize = xpixels / dpi, ypixels / dpi
+
+        fig = plt.figure(figsize=figsize, dpi=dpi)
+        ax = fig.add_axes([0, 0, 1, 1])
+        ax.axis('off')  # Turn off the axis
+
+        ax.imshow(self.topo_corr_data, cmap='Greys', vmin=vmin, vmax=vmax, interpolation='bicubic')
+
+        # Save the section as an image file
+        plt.savefig(topo_image_path, dpi=dpi, bbox_inches='tight', pad_inches=0, transparent=True)
+        plt.close()
+
+        return topo_image_path
