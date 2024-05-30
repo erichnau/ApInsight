@@ -14,16 +14,19 @@ monitors = get_monitors()
 screen_res_primary = [monitors[0].height, monitors[0].width]
 
 global window_width, window_height
-window_width = int(screen_res_primary[1]*1)
-window_height = int(screen_res_primary[0]*0.50)
+window_width = int(screen_res_primary[1] * 1)
+window_height = int(screen_res_primary[0] * 0.50)
+
 
 class SectionView(tk.Toplevel):
-    def __init__(self, section, depth_m, dist, project_file_path, sampling_interval, dtm_files, section_coor, pixelsize_z, frame_image, frame_left, top_frame, data_type, top_removed, bottom_removed, depth_table, frame_right):
+    def __init__(self, section, depth_m, dist, project_file_path, sampling_interval, dtm_files, section_coor,
+                 pixelsize_z, frame_image, frame_left, top_frame, data_type, top_removed, bottom_removed, depth_table,
+                 frame_right):
         super().__init__()
         self.section = section
 
         self.title("Section View")
-        if platform.system() =='Windows':
+        if platform.system() == 'Windows':
             self.iconbitmap('icon2.ico')
         else:
             icon_image = PhotoImage(file='icon2.png')
@@ -57,7 +60,7 @@ class SectionView(tk.Toplevel):
 
         self.vmin = int(self.config_manager.get_option('Greyscale', 'vmin'))
         self.vmax = int(self.config_manager.get_option('Greyscale', 'vmax'))
-        self.initial_window_size=False
+        self.initial_window_size = False
 
         self.zoom_level = 1  # Track zoom level
         self.init_image_position = (0, 0)  # Initial image position
@@ -95,17 +98,21 @@ class SectionView(tk.Toplevel):
         self.draw_x_line_var = tk.BooleanVar(value=True)
         self.communication_var = tk.BooleanVar(value=True)
 
-        draw_x_line_checkbox = tk.Checkbutton(self.top_frame_section_window, text="Draw X Line", variable=self.draw_y_line_var)
+        draw_x_line_checkbox = tk.Checkbutton(self.top_frame_section_window, text="Draw X Line",
+                                              variable=self.draw_y_line_var)
         draw_x_line_checkbox.pack(side="left", padx=5, pady=5)
 
-        draw_y_line_checkbox = tk.Checkbutton(self.top_frame_section_window, text="Draw Y Line", variable=self.draw_x_line_var)
+        draw_y_line_checkbox = tk.Checkbutton(self.top_frame_section_window, text="Draw Y Line",
+                                              variable=self.draw_x_line_var)
         draw_y_line_checkbox.pack(side="left", padx=5, pady=5)
 
-        communication_checkbox = tk.Checkbutton(self.top_frame_section_window, text="Enable Communication", variable=self.communication_var)
+        communication_checkbox = tk.Checkbutton(self.top_frame_section_window, text="Enable Communication",
+                                                variable=self.communication_var)
         communication_checkbox.pack(side="left", padx=5, pady=5)
 
-        greyscale_frame = tk.Frame(self.top_frame_section_window, highlightcolor='black', borderwidth=1, relief='solid', pady=5, padx=5)
-        greyscale_frame.pack(side= 'left', padx=10, pady=5)
+        greyscale_frame = tk.Frame(self.top_frame_section_window, highlightcolor='black', borderwidth=1, relief='solid',
+                                   pady=5, padx=5)
+        greyscale_frame.pack(side='left', padx=10, pady=5)
 
         greyscale_label = tk.Label(greyscale_frame, text='Greyscale range')
         greyscale_label.pack()
@@ -291,7 +298,6 @@ class SectionView(tk.Toplevel):
 
         fake_event = FakeEvent(viewport_center_x, viewport_center_y)
         self.pan_image(fake_event)
-
 
     def update_axes_after_zoom(self):
         # Get the current canvas (or window) height and width
@@ -523,7 +529,6 @@ class SectionView(tk.Toplevel):
         # Create the temporary folder if it doesn't exist
         os.makedirs(self.temp_folder_path, exist_ok=True)
 
-
     def display_section(self, image_path, top_corr=False, update_vmin_vmax=False, clear_topo=False):
         self.image = Image.open(image_path)
         self.section_image = ImageTk.PhotoImage(self.image)
@@ -554,7 +559,6 @@ class SectionView(tk.Toplevel):
                 self.resize_image_to_canvas(update_vmin_vmax=True)
                 self.topo_corrected = False
 
-
     def resize_image_to_canvas(self, top_corr=False, update_vmin_vmax=False, clear_topo=False):
         # Get the size of the canvas and the scaled image
         canvas_width = self.section_canvas.winfo_width()
@@ -582,7 +586,7 @@ class SectionView(tk.Toplevel):
             self.resized_height = int(image_height * self.zoom)
 
             self.resized_height_topo = self.resized_height
-            resize_factor = self.resized_height_topo/self.image_height_orig
+            resize_factor = self.resized_height_topo / self.image_height_orig
 
             resized_image = self.image.resize((self.resized_width, self.resized_height), Image.LANCZOS)
             resized_image.save(self.temp_folder_path + 'resized_topo_image.png')
@@ -640,7 +644,6 @@ class SectionView(tk.Toplevel):
         self.image_top_bound = self.init_image_pos[1]
         self.image_bottom_bound = self.image_top_bound + self.actual_image_height
 
-
     def calculate_frame_width(self, frame):
         max_width = 0
 
@@ -658,7 +661,6 @@ class SectionView(tk.Toplevel):
 
         return max_width
 
-
     def adjust_window_size(self, clear_topo=False, zoom=False):
         top_frame_width = self.calculate_frame_width(self.top_frame_section_window) + 50
 
@@ -670,7 +672,7 @@ class SectionView(tk.Toplevel):
         window_height = self.resized_height + 200
 
         if clear_topo:
-            window_width = min(window_width, int(screen_res_primary[1]*1))
+            window_width = min(window_width, int(screen_res_primary[1] * 1))
             self.geometry(f"{window_width}x{self.orig_window_height}")
 
         elif zoom:
@@ -737,7 +739,8 @@ class SectionView(tk.Toplevel):
         # Update the y-axis line
         self.section_canvas.coords(self.y_axis, self.y_axis_x, 10, self.y_axis_x, self.x_axis_y)
 
-        self.section_canvas.coords(self.secondary_y_axis, self.secondary_y_axis_x, 10, self.secondary_y_axis_x, self.x_axis_y)
+        self.section_canvas.coords(self.secondary_y_axis, self.secondary_y_axis_x, 10, self.secondary_y_axis_x,
+                                   self.x_axis_y)
 
         # Remove existing x-axis labels
         for label in self.x_labels:
@@ -768,7 +771,7 @@ class SectionView(tk.Toplevel):
 
             num_depth_ticks = 5  # Adjust the number of ticks as needed
             height_ticks = np.linspace(max(self.height_profile), min(self.height_profile) - self.depth_m,
-                                           num=num_depth_ticks)
+                                       num=num_depth_ticks)
 
             # Convert height ticks to depth based on height profile
             self.depth_ticks = max(self.height_profile) - height_ticks
@@ -779,11 +782,11 @@ class SectionView(tk.Toplevel):
 
         elif 'DTMfromGPR' in self.file_name:
             # Use the max and min depths from the frame_image
-            min_depth = round((self.frame_left.min_depth/100), 2)
-            max_depth = round((self.frame_left.max_depth/100), 2)
+            min_depth = round((self.frame_left.min_depth / 100), 2)
+            max_depth = round((self.frame_left.max_depth / 100), 2)
 
-            self.min_depth_new = min_depth + self.bottom_removed*self.pixelsize_z
-            self.max_depth_new = max_depth - self.top_removed*self.pixelsize_z
+            self.min_depth_new = min_depth + self.bottom_removed * self.pixelsize_z
+            self.max_depth_new = max_depth - self.top_removed * self.pixelsize_z
 
             # Calculate the depth ticks using max and min depths
             self.depth_ticks = np.linspace(self.max_depth_new, self.min_depth_new, num=5)
@@ -806,11 +809,12 @@ class SectionView(tk.Toplevel):
             else:
                 label_text = f"{depth:.1f}"  # Use regular depth value for standard section
 
-            label = self.section_canvas.create_text(self.y_axis_x - 5, label_y, anchor='e', text=label_text, tags='label_y')
+            label = self.section_canvas.create_text(self.y_axis_x - 5, label_y, anchor='e', text=label_text,
+                                                    tags='label_y')
             self.y_labels.append(label)
 
             secondary_label = self.section_canvas.create_text(self.secondary_y_axis_x + 5, label_y, anchor='w',
-                                                                  text=str(label_text), tags='label_y')
+                                                              text=str(label_text), tags='label_y')
             self.secondary_y_labels.append(secondary_label)
 
         # Add new x-axis labels
@@ -818,16 +822,18 @@ class SectionView(tk.Toplevel):
         for i, distance in enumerate(distance_ticks):
             label_x = self.y_axis_x + i * x_label_interval
             label_text = f"{distance:.1f}"  # Format the distance value as needed
-            label = self.section_canvas.create_text(label_x, self.x_axis_y + 10, anchor='n', text=label_text, tags='label_x')
+            label = self.section_canvas.create_text(label_x, self.x_axis_y + 10, anchor='n', text=label_text,
+                                                    tags='label_x')
             self.x_labels.append(label)
 
-        self.init_y_x_labels = self.x_axis_y+10
+        self.init_y_x_labels = self.x_axis_y + 10
 
         # Add distance label
         distance_label_x = int((self.y_axis_x + self.secondary_y_axis_x) / 2)
         distance_label_y = self.x_axis_y + 25  # adjust the y-coordinate for the depth label as needed
         distance_label = self.section_canvas.create_text(distance_label_x, distance_label_y, anchor='n',
-                                                         text='Distance (m)', font=("Arial", 11, "bold"), tags='dist_label')
+                                                         text='Distance (m)', font=("Arial", 11, "bold"),
+                                                         tags='dist_label')
         self.additional_labels.append(distance_label)
 
         if 'DTMfromGPR' in self.file_name:
@@ -854,7 +860,6 @@ class SectionView(tk.Toplevel):
                                                       text=depth_label_text, angle=90,
                                                       font=("Arial", 11, "bold"), tags='depth_label')
         self.additional_labels.append(depth_label)
-
 
         if 'DTMfromGPR' in self.file_name:
             # Add secondary depth label
@@ -934,10 +939,10 @@ class SectionView(tk.Toplevel):
         y_data = max(0, min(self.section_image.height() / self.zoom, y_data))
 
         # Bounds for drawing the lines based on the visible part of the image
-        image_right = image_left + self.section_image.width()# * self.zoom
-        image_bottom = image_top + self.section_image.height()# * self.zoom
+        image_right = image_left + self.section_image.width()  # * self.zoom
+        image_bottom = image_top + self.section_image.height()  # * self.zoom
 
-        #print('Image right and bottom: ', image_right, image_bottom)
+        # print('Image right and bottom: ', image_right, image_bottom)
 
         # Check if the cursor is within the visible part of the image
         if image_left <= x <= image_right and image_top <= y <= image_bottom:
@@ -968,7 +973,6 @@ class SectionView(tk.Toplevel):
             self.section_canvas.delete('x_line')
             self.section_canvas.delete('y_line')
             self.section_canvas.delete('height_profile_line')
-
 
     def get_closest_indx_height_profile(self, x_data):
         # Get the image top left corner coordinates
@@ -1003,7 +1007,7 @@ class SectionView(tk.Toplevel):
         height_points = []
 
         closest_index = int(round((x_data - image_left) / (self.sampling_interval * self.scale_factor)))
-        self.height = self.downsampled_height_profile[closest_index-1]
+        self.height = self.downsampled_height_profile[closest_index - 1]
 
         # Calculate the y-coordinate offset for this height point based on the closest index
         y_offset = (y_data + (self.downsampled_height_profile[closest_index - 1] - min_height) * self.scale_factor)
@@ -1028,12 +1032,12 @@ class SectionView(tk.Toplevel):
             y_data_max_height = max_height_point[1]
             self.y_max_height = y_data_max_height / self.zoom
 
-            self.y_coord_max_point = abs(((image_top - 10) / self.zoom)) + ((y_offset) - (self.downsampled_height_profile[max_height] - min_height) * self.scale_factor) / self.zoom
+            self.y_coord_max_point = abs(((image_top - 10) / self.zoom)) + ((y_offset) - (
+                        self.downsampled_height_profile[max_height] - min_height) * self.scale_factor) / self.zoom
 
             # Create a line using the visible height points without the index
         self.section_canvas.create_line([(x, y) for x, y, _ in visible_height_points], fill='black',
                                         tags='height_profile_line')
-
 
     def plot_height_profile_from_ds(self, y_data):
         # Clear any previous height profile lines
@@ -1073,18 +1077,17 @@ class SectionView(tk.Toplevel):
         visible_height_points = [point for point in height_points if
                                  self.y_axis_x <= point[0] <= self.secondary_y_axis_x]
 
-            # Create a line using the visible height points without the index
+        # Create a line using the visible height points without the index
         self.section_canvas.create_line([(x, y) for x, y, _ in visible_height_points], fill='black',
                                         tags='height_profile_line')
-
 
     def get_xy_from_section_coor(self, x):
         section_start = self.section_coor[0]  # Start point of the section
         section_stop = self.section_coor[1]  # Stop point of the section
-        x /= round(self.section.shape[1]/self.dist)
+        x /= round(self.section.shape[1] / self.dist)
         # Calculate the total distance along the section
         section_distance = ((section_stop[0] - section_start[0]) ** 2 + (
-                    section_stop[1] - section_start[1]) ** 2) ** 0.5
+                section_stop[1] - section_start[1]) ** 2) ** 0.5
 
         # Calculate the ratio of the given x_data relative to the total distance
         ratio = x / section_distance
@@ -1133,7 +1136,8 @@ class SectionView(tk.Toplevel):
         num_rows = len(self.section)
         depth_range = self.depth_m
         depth_value = int((y_data / num_rows) * depth_range * 100)  # Multiply by 100 to convert to centimeters
-        depth_value = round(depth_value / (self.pixelsize_z * 100)) * (self.pixelsize_z * 100)   # Round to the nearest 5 cm step
+        depth_value = round(depth_value / (self.pixelsize_z * 100)) * (
+                    self.pixelsize_z * 100)  # Round to the nearest 5 cm step
         return depth_value
 
     def get_y_data_from_depth(self, depth):
@@ -1168,7 +1172,7 @@ class SectionView(tk.Toplevel):
         # Calculate the depth value based on the relative position
         depth_value = self.max_depth_new - (relative_y_position * depth_range)
 
-        depth_value_rounded = round(depth_value*100 / int(self.pixelsize_z*100)) * int(self.pixelsize_z*100)
+        depth_value_rounded = round(depth_value * 100 / int(self.pixelsize_z * 100)) * int(self.pixelsize_z * 100)
 
         return depth_value_rounded
 
@@ -1206,9 +1210,9 @@ class SectionView(tk.Toplevel):
 
         elevation = None
         if self.data_type == 2:
-            depth = depth*100
+            depth = depth * 100
         if self.topo_corrected:
-            elevation = self.height - depth/100
+            elevation = self.height - depth / 100
         if 'DTMfromGPR' in self.file_name:
             elevation = depth / 100
             depth = self.depth_from_ds
@@ -1216,11 +1220,9 @@ class SectionView(tk.Toplevel):
         self.frame_image.coordinates_label.update_coordinates(x_coor, y_coor)
         self.coordinates_label.update_coordinates(x_coor, y_coor, depth=depth, elevation=elevation)
 
-
     def set_depth_value(self, depth_start, elevation):
         self.depth_from_ds = depth_start
         self.elevation = elevation
-
 
     def update_coordinates_label_from_ds(self, x, y, depth):
         elevation = None
@@ -1251,10 +1253,9 @@ class SectionView(tk.Toplevel):
                 y_data = self.get_y_data_from_depth(depth)
                 y_offset = 0
             else:
-                depth = depth-5
+                depth = depth - 5
                 y_data = self.get_y_data_from_depth(depth)
                 y_offset = 10
-
 
             if self.topo_corrected:
                 y = (y_data * self.zoom) + self.section_canvas.coords(self.canvas_image)[1]
@@ -1285,7 +1286,6 @@ class SectionView(tk.Toplevel):
         plt.savefig(self.image_path, dpi=dpi, bbox_inches='tight', pad_inches=0, transparent=True)
         plt.close()
 
-
     def get_visible_image_bounds(self):
         # Get the position of the image on the canvas
         img_x, img_y = self.section_canvas.coords(self.canvas_image)
@@ -1312,7 +1312,6 @@ class SectionView(tk.Toplevel):
 
         return visible_left, visible_top, visible_right, visible_bottom
 
-
     def save_section(self):
         file_path = filedialog.asksaveasfilename(defaultextension='.png', filetypes=[('PNG Image', '*.png')])
         if not file_path:
@@ -1336,7 +1335,6 @@ class SectionView(tk.Toplevel):
         self.cropped_image.save(file_path, 'PNG')
 
         self.plot_image_with_labels(file_path=file_path)
-
 
     def plot_image_with_labels(self, file_path):
         # Gather data for each set of labels (currently commented out)
@@ -1424,7 +1422,8 @@ class SectionView(tk.Toplevel):
         # Plotting additional labels
         for data in additional_label_data:
             if data['tag'] == 'dist_label':
-                ax.text(data['x'] - self.y_axis_x, data['y'] - 5, data['text'], ha='center', va='top', color='black', fontweight='bold')
+                ax.text(data['x'] - self.y_axis_x, data['y'] - 5, data['text'], ha='center', va='top', color='black',
+                        fontweight='bold')
             elif data['tag'] == 'depth_label':
                 ax.text(data['x'] - self.y_axis_x - depth_label_offset, data['y'] - 10, data['text'], rotation=90,
                         ha='center', va='center', color='black', fontweight='bold')
@@ -1474,7 +1473,7 @@ class SectionView(tk.Toplevel):
         elif axis == 'label_y':
             lab1_pos = float(data[0]['y'])
             lab2_pos = float(data[1]['y'])
-            min_pixel = 10     # Starting position in pixels
+            min_pixel = 10  # Starting position in pixels
             max_pixel = self.x_axis_y  # Ending position in pixels
 
         interval = lab2 - lab1
@@ -1482,7 +1481,8 @@ class SectionView(tk.Toplevel):
 
         pixel_per_meter = interval_y / interval
 
-        start_value = lab1 - (lab1_pos - min_pixel) / pixel_per_meter  # Adjust this calculation based on your data setup
+        start_value = lab1 - (
+                    lab1_pos - min_pixel) / pixel_per_meter  # Adjust this calculation based on your data setup
 
         num_labels = 5  # Total number of labels to display
 
@@ -1525,7 +1525,6 @@ class SectionView(tk.Toplevel):
 
         return label_data_new
 
-
     def apply_transformations(self, visible_left, visible_top, visible_right, visible_bottom):
         # Example of applying transformations and updating the PIL and PhotoImage
         if self.topo_corrected:
@@ -1538,9 +1537,9 @@ class SectionView(tk.Toplevel):
 
         self.pil_section_image = self.pil_section_image.resize((width, height), Image.LANCZOS)
 
-        self.pil_section_image = self.pil_section_image.crop((visible_left, visible_top, visible_right, visible_bottom))  # Any transformation
+        self.pil_section_image = self.pil_section_image.crop(
+            (visible_left, visible_top, visible_right, visible_bottom))  # Any transformation
         return self.pil_section_image
-
 
     def add_topography(self):
         self.clear_topography()
@@ -1589,7 +1588,8 @@ class SectionView(tk.Toplevel):
             # Add a command to handle checkbox selection
             checkbox.config(command=lambda cb=checkbox: self.toggle_dtm_file_selection(cb, selected_dtm_files))
 
-        self.confirm_button = tk.Button(dtm_window, text="Confirm", command=lambda: dtm_window.destroy(), state='disabled')
+        self.confirm_button = tk.Button(dtm_window, text="Confirm", command=lambda: dtm_window.destroy(),
+                                        state='disabled')
         self.confirm_button.pack()
 
         dtm_window.wait_window(dtm_window)
@@ -1619,8 +1619,8 @@ class SectionView(tk.Toplevel):
         step_size = int(num_points / num_columns)
         self.downsampled_height_profile = self.height_profile[::step_size]
 
-
-        max_elev_diff = int((np.max(self.downsampled_height_profile) - np.min(self.downsampled_height_profile)) * (1 / self.pixelsize_z))
+        max_elev_diff = int((np.max(self.downsampled_height_profile) - np.min(self.downsampled_height_profile)) * (
+                    1 / self.pixelsize_z))
         tshift = (np.max(self.downsampled_height_profile) - self.downsampled_height_profile) * (1 / self.pixelsize_z)
 
         # Adjust the time shifts so that the highest elevation becomes zero time
@@ -1667,8 +1667,3 @@ class FakeEvent:
     def __init__(self, x, y):
         self.x = x
         self.y = y
-
-
-
-
-

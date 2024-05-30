@@ -17,11 +17,13 @@ window_width = int(screen_res_primary[1]*1)
 window_height = int(screen_res_primary[0]*0.50)
 
 from GUI.SectionViewer.TopFrameTools import TopFrameTools
+from GUI.SectionViewer.DTMFileSelector import DTMFileSelector
+
 
 class SectionView(tk.Toplevel):
-    def __init__(self, section, depth_m, dist, project_file_path, sampling_interval, dtm_files, section_coor, pixelsize_z, frame_image, frame_left, top_frame, data_type, top_removed, bottom_removed, depth_table, frame_right):
+    def __init__(self, arb_section, project_file_path, frame_image, frame_left, top_frame, frame_right):
         super().__init__()
-        self.section = section
+        self.section = arb_section
 
         self.section_view = self
 
@@ -45,18 +47,8 @@ class SectionView(tk.Toplevel):
 
         self.image_path = None
         self.height_profile = None
-        self.depth_m = depth_m
-        self.dist = dist
         self.project_file_path = project_file_path
-        self.sampling_interval = sampling_interval
-        self.dtm_files = dtm_files
-        self.section_coor = section_coor
-        self.pixelsize_z = pixelsize_z
-        self.data_type = data_type
         self.file_name = self.frame_left.active_file_name
-        self.top_removed = top_removed
-        self.bottom_removed = bottom_removed
-        self.depth_table = depth_table
 
         self.vmin = int(self.config_manager.get_option('Greyscale', 'vmin'))
         self.vmax = int(self.config_manager.get_option('Greyscale', 'vmax'))
@@ -76,13 +68,13 @@ class SectionView(tk.Toplevel):
 
         self.create_temporary_folder()
 
-        self.create_image_from_section()
+        self.image_path = self.section.create_image_from_section(self.temp_folder_path, self.vmin, self.vmax)
         self.display_section(self.image_path)
 
         self._set_canvas_variables()
 
     def create_top_frame(self):
-        self.tf = TopFrameTools(self, self.section, self.section_coor, self.dist, self.file_name, self.data_type, self.depth_m, self.pixelsize_z, self.frame_image, self.frame_left)
+        self.tf = TopFrameTools(self, self.section.section_data, self.section.section_coor, self.section.dist, self.file_name, self.section.data_type, self.section.depth_m, self.section.pixelsize_z, self.frame_image, self.frame_left)
         self.tf.pack(side="top", fill="x")
 
     def _set_image_canvas(self):
@@ -123,18 +115,124 @@ class SectionView(tk.Toplevel):
         self.additional_labels = []
 
 
+    def start_pan(self, event):
+        self.init_image_position = (event.x, event.y)  # Capture initial position
+
+    def pan_image(self, event):
+        dx = (event.x - self.init_image_position[0])
+        dy = (event.y - self.init_image_position[1])
+
+        self.pan_offset_x += dx
+        self.pan_offset_y += dy
+
+        actual_image_width = self.section_image.width()
+        actual_image_height = self.section_image.height()
+
+        current_pos = self.section_canvas.coords(self.canvas_image)
+        new_x = current_pos[0] + dx
+        new_y = current_pos[1] + dy
+
+        if new_x > self.image_left_bound:
+            dx = self.image_left_bound - current_pos[0]
+        if new_x + actual_image_width < self.secondary_y_axis_x:
+            dx = self.secondary_y_axis_x - 1 - (current_pos[0] + actual_image_width)
+
+        if new_y > self.image_top_bound:
+            dy = self.image_top_bound - current_pos[1]
+        elif new_y + actual_image_height < self.x_axis_y:
+            dy = self.x_axis_y - 2 - (current_pos[1] + actual_image_height)
+
+        self.section_canvas.move(self.canvas_image, dx, dy)
+        self.init_image_position = (event.x, event.y)
+        self.update_axes_based_on_pan(dx, dy)
+
+    def update_axes_based_on_pan(self, dx, dy):
+        # Adjust the x-axis labels based on the image movement, skip the last label
+        for label in self.x_labels[:-1]:  # The '[:-1]' slice selects all but the last item
+            self.section_canvas.move(label, dx, 0)
+
+        # Adjust the y-axis labels based on the image movement, skip the last label
+        for label in self.y_labels[:-1]:  # Similarly, '[:-1]' skips the last item
+            self.section_canvas.move(label, 0, dy)
+
+        # Do the same for secondary y-axis labels if present, skip the last label
+        for label in self.secondary_y_labels[:-1]:
+            self.section_canvas.move(label, 0, dy)
+
+
+    def zoom_section(self, direction='in', cursor_position=None):
+        # Determine the zoom factor
+        if direction == 'in':
+            zoom_factor = 1.1
+        elif direction == 'out':
+            zoom_factor = 1 / 1.1
+        else:
+            raise ValueError("Invalid zoom direction. Use 'in' or 'out'.")
+
+        # Get the current center of the viewport or cursor position
+        if cursor_position is None:
+            viewport_center_x = self.section_canvas.canvasx(self.section_canvas.winfo_width() / 2)
+            viewport_center_y = self.section_canvas.canvasy(self.section_canvas.winfo_height() / 2)
+        else:
+            viewport_center_x, viewport_center_y = cursor_position
+
+        # Calculate the new dimensions
+        new_width = int(self.section_image.width() * zoom_factor)
+        new_height = int(self.section_image.height() * zoom_factor)
+
+        if direction == 'in':
+            self.zoom *= zoom_factor
+        else:
+            self.zoom /= zoom_factor
+
+        # Ensure dimensions do not fall below the actual initial dimensions when zooming out
+        if direction == 'out':
+            new_width = max(new_width, self.actual_image_width)
+            new_height = max(new_height, self.actual_image_height)
+            if new_width == self.actual_image_width:
+                self.zoom = self.init_zoom
+
+        resized_image = self.image.resize((new_width, new_height), Image.LANCZOS)
+        self.section_image = ImageTk.PhotoImage(resized_image)
+
+        # Calculate the new position based on the zoom center
+        current_pos = self.section_canvas.coords(self.canvas_image)
+        if direction == 'in':
+            new_x = viewport_center_x - (viewport_center_x - current_pos[0]) * zoom_factor
+            new_y = viewport_center_y - (viewport_center_y - current_pos[1]) * zoom_factor
+        else:
+            shift_x = (self.section_image.width() - new_width) / 2
+            shift_y = (self.section_image.height() - new_height) / 2
+            new_x = viewport_center_x - (viewport_center_x - current_pos[0]) * (1 / zoom_factor)
+            new_y = viewport_center_y - (viewport_center_y - current_pos[1]) * (1 / zoom_factor)
+
+        # Apply boundary constraints
+        new_x = min(max(new_x, self.secondary_y_axis_x - new_width), self.image_left_bound)
+        new_y = min(max(new_y, self.x_axis_y - new_height), self.image_top_bound)
+
+        # Update the image position and zoom
+        self.section_canvas.itemconfig(self.canvas_image, image=self.section_image)
+        self.section_canvas.coords(self.canvas_image, new_x, new_y)
+
+        self.adjust_window_size(zoom=True)
+        self.update_axes_after_zoom()
+
+        fake_event = FakeEvent(viewport_center_x, viewport_center_y)
+        self.pan_image(fake_event)
+
+
     def update_axes_after_zoom(self):
         # Get the current canvas (or window) height and width
-        canvas_width = self.tf.section_canvas.winfo_width()
-        canvas_height = self.tf.section_canvas.winfo_height()
+        canvas_width = self.section_canvas.winfo_width()
+        canvas_height = self.section_canvas.winfo_height()
 
         # Calculate maximum allowed positions for the axes based on the canvas dimensions
         max_x_axis_y = canvas_height - 80  # Subtracting 50 for padding
         max_secondary_y_axis_x = canvas_width - 50  # Subtracting 50 for padding
 
         # Calculate new positions for the axes based on the zoomed image dimensions
-        proposed_x_axis_y = self.tf.section_image.height() + 12
-        proposed_secondary_y_axis_x = self.y_axis_x + self.tf.section_image.width()
+        proposed_x_axis_y = self.section_image.height() + 12
+        proposed_secondary_y_axis_x = self.y_axis_x + self.section_image.width()
 
         # Apply the maximum constraints
         self.x_axis_y = min(proposed_x_axis_y, max_x_axis_y)
@@ -162,7 +260,7 @@ class SectionView(tk.Toplevel):
         visible_width_pixels = min(canvas_width - max(actual_x0, 0), self.section_image.width())
 
         # The ratio of pixels to meters for the full image
-        pixel_to_meter_ratio = self.dist / self.section_image.width()
+        pixel_to_meter_ratio = self.section.dist / self.section_image.width()
 
         # Calculate the interval in meters between labels for the visible part
         label_interval_pixels = visible_width_pixels / (num_visible_labels - 1)
@@ -202,9 +300,9 @@ class SectionView(tk.Toplevel):
         if self.topo_corrected:
             min_height = min(self.height_profile)
             max_height = max(self.height_profile)
-            total_depth_meters = self.depth_m + max_height - min_height
+            total_depth_meters = self.section.depth_m + max_height - min_height
         else:
-            total_depth_meters = self.depth_m
+            total_depth_meters = self.section.depth_m
 
         depth_per_pixel = total_depth_meters / total_height_pixels
         visible_depth_meters = visible_height_pixels * depth_per_pixel
@@ -303,9 +401,9 @@ class SectionView(tk.Toplevel):
     def regenerate_and_refresh_image(self):
         # Regenerate the image with the new vmin and vmax values
         if self.topo_corrected:
-            self.save_topo_corrected_section()
+            self.section.save_topo_corrected_section(self.temp_folder_path, self.vmin, self.vmax)
         else:
-            self.create_image_from_section()
+            self.image_path = self.section.create_image_from_section(self.temp_folder_path, self.vmin, self.vmax)
             self.display_section(self.image_path, top_corr=self.topo_corrected, update_vmin_vmax=True)
 
     def reset_to_default_greyscale(self):
@@ -513,8 +611,8 @@ class SectionView(tk.Toplevel):
             max_width = int(screen_res_primary[1] * 1)
             max_height = int(screen_res_primary[0] * 0.55)
 
-            current_image_width = self.tf.section_image.width()
-            current_image_height = self.tf.section_image.height()
+            current_image_width = self.section_image.width()
+            current_image_height = self.section_image.height()
 
             # Determine the width for the section image including some padding
             image_frame_width = current_image_width + 200
@@ -599,10 +697,10 @@ class SectionView(tk.Toplevel):
             min_height = min(self.height_profile)
             max_height = max(self.height_profile)
 
-            min_depth = min_height - self.depth_m
+            min_depth = min_height - self.section.depth_m
 
             num_depth_ticks = 5  # Adjust the number of ticks as needed
-            height_ticks = np.linspace(max(self.height_profile), min(self.height_profile) - self.depth_m,
+            height_ticks = np.linspace(max(self.height_profile), min(self.height_profile) - self.section.depth_m,
                                            num=num_depth_ticks)
 
             # Convert height ticks to depth based on height profile
@@ -617,16 +715,16 @@ class SectionView(tk.Toplevel):
             min_depth = round((self.frame_left.min_depth/100), 2)
             max_depth = round((self.frame_left.max_depth/100), 2)
 
-            self.min_depth_new = min_depth + self.bottom_removed*self.pixelsize_z
-            self.max_depth_new = max_depth - self.top_removed*self.pixelsize_z
+            self.min_depth_new = min_depth + self.section.bottom_removed * self.section.pixelsize_z
+            self.max_depth_new = max_depth - self.section.top_removed * self.section.pixelsize_z
 
             # Calculate the depth ticks using max and min depths
             self.depth_ticks = np.linspace(self.max_depth_new, self.min_depth_new, num=5)
 
         else:
-            self.depth_ticks = np.linspace(0, self.depth_m, num=5)
+            self.depth_ticks = np.linspace(0, self.section.depth_m, num=5)
 
-        distance_ticks = np.linspace(0, self.dist, num=5)  # Adjust the number of ticks as needed
+        distance_ticks = np.linspace(0, self.section.dist, num=5)  # Adjust the number of ticks as needed
 
         # Add new y-axis labels
         y_label_interval = (self.x_axis_y - 10) / (len(self.depth_ticks) - 1)
@@ -744,23 +842,21 @@ class SectionView(tk.Toplevel):
                                              fill=mask_color,
                                              outline=mask_color, tags=self.mask_tag)
 
-
-
     def get_closest_indx_height_profile(self, x_data):
         # Get the image top left corner coordinates
         image_left, image_top = self.section_canvas.coords(self.canvas_image)[0:2]
 
         # Calculate the total length of the downsampled height profile in meters
-        total_length_meters = len(self.downsampled_height_profile) * self.sampling_interval
+        total_length_meters = len(self.downsampled_height_profile) * self.section.sampling_interval
 
         # Calculate the scaling factor for converting x_data to index in the height profile array
         self.scale_factor = self.section_image.width() / total_length_meters
 
-        closest_index = int(round((x_data - image_left) / (self.sampling_interval * self.scale_factor)))
+        closest_index = int(round((x_data - image_left) / (self.section.sampling_interval * self.scale_factor)))
 
         return closest_index
 
-    def plot_height_profile(self, y_data, x_data):
+    def plot_height_profile(self, y_data, x_data=None, use_ds=False):
         # Clear any previous height profile lines
         self.section_canvas.delete('height_profile_line')
 
@@ -771,15 +867,18 @@ class SectionView(tk.Toplevel):
         max_height = np.argmax(self.downsampled_height_profile)
 
         # Calculate the total length of the downsampled height profile in meters
-        total_length_meters = len(self.downsampled_height_profile) * self.sampling_interval
+        total_length_meters = len(self.downsampled_height_profile) * self.section.sampling_interval
 
         # Calculate the scaling factor for converting x_data to index in the height profile array
         self.scale_factor = self.section_image.width() / total_length_meters
 
         height_points = []
 
-        closest_index = int(round((x_data - image_left) / (self.sampling_interval * self.scale_factor)))
-        self.height = self.downsampled_height_profile[closest_index-1]
+        if use_ds:
+            closest_index = np.argmax(self.downsampled_height_profile) + 1
+        else:
+            closest_index = int(round((x_data - image_left) / (self.section.sampling_interval * self.scale_factor)))
+            self.height = self.downsampled_height_profile[closest_index - 1]
 
         # Calculate the y-coordinate offset for this height point based on the closest index
         y_offset = (y_data + (self.downsampled_height_profile[closest_index - 1] - min_height) * self.scale_factor)
@@ -787,7 +886,7 @@ class SectionView(tk.Toplevel):
         # Iterate over each height value and its index in the height profile
         for i, height in enumerate(self.downsampled_height_profile):
             # Calculate the x-coordinate for this height point
-            x_coord = image_left + (i * self.sampling_interval) * self.scale_factor
+            x_coord = image_left + (i * self.section.sampling_interval) * self.scale_factor
 
             # Calculate the y-coordinate for this height point
             y_coord = y_offset - (height - min_height) * self.scale_factor
@@ -804,59 +903,16 @@ class SectionView(tk.Toplevel):
             y_data_max_height = max_height_point[1]
             self.y_max_height = y_data_max_height / self.zoom
 
-            self.y_coord_max_point = abs(((image_top - 10) / self.zoom)) + ((y_offset) - (self.downsampled_height_profile[max_height] - min_height) * self.scale_factor) / self.zoom
+            self.y_coord_max_point = abs(((image_top - 10) / self.zoom)) + ((y_offset) - (
+                        self.downsampled_height_profile[max_height] - min_height) * self.scale_factor) / self.zoom
 
-            # Create a line using the visible height points without the index
+        # Create a line using the visible height points without the index
         self.section_canvas.create_line([(x, y) for x, y, _ in visible_height_points], fill='black',
                                         tags='height_profile_line')
-
-
-    def plot_height_profile_from_ds(self, y_data):
-        # Clear any previous height profile lines
-        self.section_canvas.delete('height_profile_line')
-
-        # Get the image top left corner coordinates
-        image_left, image_top = self.section_canvas.coords(self.canvas_image)[0:2]
-
-        min_height = min(self.downsampled_height_profile)
-        max_height = np.argmax(self.downsampled_height_profile)
-
-        # Calculate the total length of the downsampled height profile in meters
-        total_length_meters = len(self.downsampled_height_profile) * self.sampling_interval
-
-        # Calculate the scaling factor for converting x_data to index in the height profile array
-        self.scale_factor = self.section_image.width() / total_length_meters
-
-        height_points = []
-
-        closest_index = np.argmax(self.downsampled_height_profile) + 1
-
-        # Calculate the y-coordinate offset for this height point based on the closest index
-        y_offset = (y_data + (self.downsampled_height_profile[closest_index - 1] - min_height) * self.scale_factor)
-
-        # Iterate over each height value and its index in the height profile
-        for i, height in enumerate(self.downsampled_height_profile):
-            # Calculate the x-coordinate for this height point
-            x_coord = image_left + (i * self.sampling_interval) * self.scale_factor
-
-            # Calculate the y-coordinate for this height point
-            y_coord = y_offset - (height - min_height) * self.scale_factor
-
-            # Append the calculated (x, y) point to the height_points list
-            height_points.append((x_coord, y_coord, i))  # Include index
-
-        # Filter height_points to only include those within the visible x bounds
-        visible_height_points = [point for point in height_points if
-                                 self.y_axis_x <= point[0] <= self.secondary_y_axis_x]
-
-            # Create a line using the visible height points without the index
-        self.section_canvas.create_line([(x, y) for x, y, _ in visible_height_points], fill='black',
-                                        tags='height_profile_line')
-
 
     def get_section_coor_from_xy(self, x, y):
-        section_start = self.section_coor[0]  # Start point of the section
-        section_stop = self.section_coor[1]  # Stop point of the section
+        section_start = self.section.section_coor[0]  # Start point of the section
+        section_stop = self.section.section_coor[1]  # Stop point of the section
 
         # Calculate the total distance along the section
         section_distance = ((section_stop[0] - section_start[0]) ** 2 + (
@@ -869,7 +925,7 @@ class SectionView(tk.Toplevel):
         ratio = distance_to_xy / section_distance
 
         # Interpolate the x and y coordinates along the section
-        section_x = round(ratio * self.section.shape[1])
+        section_x = round(ratio * self.section.section_data.shape[1])
 
         return section_x
 
@@ -892,13 +948,13 @@ class SectionView(tk.Toplevel):
 
     def get_y_data_from_depth(self, depth):
         # Adjust y_data for zoom and pan
-        num_rows = len(self.section)
-        depth_range = self.depth_m
+        num_rows = len(self.section.section_data)
+        depth_range = self.section.depth_m
         y_data = (depth / (depth_range * 100)) * num_rows  # Calculate y_data based on depth value
         return y_data
 
     def get_y_data_from_depth_dtm(self, depth):
-        num_rows = len(self.section)
+        num_rows = len(self.section.section_data)
         depth_range = self.max_depth_new - self.min_depth_new
 
         # Constrain the depth value within the range of max_depth_new and min_depth_new
@@ -913,7 +969,7 @@ class SectionView(tk.Toplevel):
         return int(y_data)
 
     def get_depth_from_y_data_dtm(self, y_data):
-        num_rows = len(self.section)
+        num_rows = len(self.section.section_data)
         depth_range = self.max_depth_new - self.min_depth_new
 
         # Calculate the relative position of y_data in the section
@@ -922,24 +978,22 @@ class SectionView(tk.Toplevel):
         # Calculate the depth value based on the relative position
         depth_value = self.max_depth_new - (relative_y_position * depth_range)
 
-        depth_value_rounded = round(depth_value*100 / int(self.pixelsize_z*100)) * int(self.pixelsize_z*100)
+        depth_value_rounded = round(depth_value*100 / int(self.section.pixelsize_z*100)) * int(self.section.pixelsize_z*100)
 
         return depth_value_rounded
 
     def get_depth_from_y_data_ft(self, y_data):
         # Existing code to calculate depth_value
-        num_rows = len(self.section)
-        depth_range = self.depth_m
+        num_rows = len(self.section.section_data)
+        depth_range = self.section.depth_m
         depth_value = int((y_data / num_rows) * depth_range * 100)  # Convert to centimeters
-        depth_value = round(depth_value / (self.pixelsize_z * 100)) * (self.pixelsize_z * 100) / 100
+        depth_value = round(depth_value / (self.section.pixelsize_z * 100)) * (self.section.pixelsize_z * 100) / 100
 
         # Find the closest value in the first column of the table
-        closest_idx = np.argmin(np.abs(self.depth_table[:, 0] - depth_value))
-        closest_depth = self.depth_table[closest_idx, 0]
+        closest_idx = np.argmin(np.abs(self.section.depth_table[:, 0] - depth_value))
+        closest_depth = self.section.depth_table[closest_idx, 0]
 
         return round(closest_depth, 3)
-
-
 
 
     def set_depth_value(self, depth_start, elevation):
@@ -949,7 +1003,7 @@ class SectionView(tk.Toplevel):
 
     def update_coordinates_label_from_ds(self, x, y, depth):
         elevation = None
-        if self.data_type == 2:
+        if self.section.data_type == 2:
             depth = depth * 100
         if self.topo_corrected:
             x = self.update_x_line(x, y, for_labels=True)
@@ -964,7 +1018,7 @@ class SectionView(tk.Toplevel):
     def update_y_line(self, depth):
         if self.tf.draw_y_line_var.get():
 
-            if self.data_type == 2:
+            if self.section.data_type == 2:
                 depth = depth
                 y_data = self.get_y_data_from_depth(depth)
                 y_offset = 10
@@ -983,7 +1037,7 @@ class SectionView(tk.Toplevel):
 
             if self.topo_corrected:
                 y = (y_data * self.zoom) + self.section_canvas.coords(self.canvas_image)[1]
-                self.plot_height_profile_from_ds(y)
+                self.plot_height_profile(y_data=y, use_ds=True)
             else:
                 canvas_width = self.section_canvas.winfo_width()
 
@@ -992,23 +1046,6 @@ class SectionView(tk.Toplevel):
                 self.section_canvas.delete('y_line')
 
                 self.section_canvas.create_line(0, y, canvas_width, y, tags='y_line')
-
-    def create_image_from_section(self):
-        self.image_path = os.path.join(self.temp_folder_path, "section_image_temp.png")
-
-        dpi = 100
-        xpixels, ypixels = self.section.shape[1], self.section.shape[0]
-        figsize = xpixels / dpi, ypixels / dpi
-
-        fig = plt.figure(figsize=figsize, dpi=dpi)
-        ax = fig.add_axes([0, 0, 1, 1])
-        ax.axis('off')  # Turn off the axis
-
-        ax.imshow(self.section, cmap='Greys', vmin=self.vmin, vmax=self.vmax, interpolation='bilinear')
-
-        # Save the section as an image file
-        plt.savefig(self.image_path, dpi=dpi, bbox_inches='tight', pad_inches=0, transparent=True)
-        plt.close()
 
 
     def get_visible_image_bounds(self):
@@ -1269,15 +1306,17 @@ class SectionView(tk.Toplevel):
 
     def add_topography(self):
         self.clear_topography()
-        if len(self.dtm_files) == 1:
-            dtm_data = next(iter(self.dtm_files.values()))
-            self.perform_topographic_correction(dtm_data)
-            self.save_topo_corrected_section()
-        elif len(self.dtm_files) > 1:
-            dtm_data = self.select_dtm_file()
-            if dtm_data:
-                self.perform_topographic_correction(dtm_data[0])
-                self.save_topo_corrected_section()
+        if len(self.section.dtm_files) == 1:
+            dtm_data = next(iter(self.section.dtm_files.values()))
+            self.topo_corr_data, self.downsampled_height_profile, self.height_profile, topo_image_path = self.section.perform_topographic_correction(dtm_data, self.temp_folder_path, self.vmin, self.vmax)
+            self.display_section(topo_image_path, top_corr=True)
+        elif len(self.section.dtm_files) > 1:
+            dtm_selector = DTMFileSelector(self, self.section.dtm_files)
+            selected_files = dtm_selector.get_selected_dtm_files()
+            if selected_files:
+                self.topo_corr_data, self.downsampled_height_profile, self.height_profile, topo_image_path = self.section.perform_topographic_correction(
+                    selected_files[0], self.temp_folder_path, self.vmin, self.vmax)
+                self.display_section(topo_image_path, top_corr=True)
         else:
             messagebox.showinfo("No DTM File", "No DTM file available for topographic correction.")
 
@@ -1290,104 +1329,11 @@ class SectionView(tk.Toplevel):
         self.display_section(self.image_path, top_corr=False, clear_topo=True)
         self.init_image_position = (0, 0)
 
-    def select_dtm_file(self):
-        dtm_file_options = list(self.dtm_files.keys())
 
-        dtm_window = tk.Toplevel()
-        dtm_window.title("Select DTM File")
-
-        label = tk.Label(dtm_window, text="Multiple DTM files available. Please select the desired DTM file:")
-        label.pack()
-
-        # Create checkboxes for each DTM file option
-        selected_dtm_files = []
-        for dtm_file_key in dtm_file_options:
-            dtm_file_path = self.dtm_files[dtm_file_key]
-
-            var = tk.BooleanVar()
-
-            # Create a checkbox for the DTM file option
-            checkbox = tk.Checkbutton(dtm_window, text=dtm_file_key, variable=var)
-            checkbox.dtm_file_path = dtm_file_path  # Store the DTM file path as an attribute of the checkbox
-            checkbox.pack()
-
-            # Add a command to handle checkbox selection
-            checkbox.config(command=lambda cb=checkbox: self.toggle_dtm_file_selection(cb, selected_dtm_files))
-
-        self.confirm_button = tk.Button(dtm_window, text="Confirm", command=lambda: dtm_window.destroy(), state='disabled')
-        self.confirm_button.pack()
-
-        dtm_window.wait_window(dtm_window)
-
-        # Return the selected DTM data
-        return [cb.dtm_file_path for cb in selected_dtm_files]
-
-    def toggle_dtm_file_selection(self, checkbox, selected_dtm_files):
-        for cb in selected_dtm_files:
-            cb.deselect()
-        selected_dtm_files.clear()
-        selected_dtm_files.append(checkbox)
-        checkbox.select()
-        self.confirm_button.config(state='normal')
-
-    def perform_topographic_correction(self, dtm_data):
-        dtm = dtm_data
-
-        coordinates = self.section_coor
-
-        self.height_profile = dtm.create_height_profile(coordinates, self.section.shape[1])
-
-        num_columns = self.section.shape[1]
-        num_points = self.height_profile.shape[0]
-
-        # Downsample the height profile to match the number of columns in self.section
-        step_size = int(num_points / num_columns)
-        self.downsampled_height_profile = self.height_profile[::step_size]
-
-
-        max_elev_diff = int((np.max(self.downsampled_height_profile) - np.min(self.downsampled_height_profile)) * (1 / self.pixelsize_z))
-        tshift = (np.max(self.downsampled_height_profile) - self.downsampled_height_profile) * (1 / self.pixelsize_z)
-
-        # Adjust the time shifts so that the highest elevation becomes zero time
-
-        tshift = tshift.astype(int)  # Convert each element of the array to integers
-
-        # Create a new data matrix with NaN padding
-        self.topo_corr_data = np.empty((self.section.shape[0] + max_elev_diff, num_columns))
-        self.topo_corr_data[:] = np.nan
-
-        for i in range(num_columns):
-            shift_amount = tshift[i]
-
-            # Add NaN padding to the bottom of the column
-            padded_column = np.pad(self.section[:, i], (0, max_elev_diff), mode='constant', constant_values=np.nan)
-
-            # Perform the roll operation
-            shifted_column = np.roll(padded_column, shift_amount)
-
-            # Insert the shifted column into newdata
-            self.topo_corr_data[:, i] = shifted_column[:self.topo_corr_data.shape[0]]
-
-    def save_topo_corrected_section(self):
-        self.topo_image_path = os.path.join(self.temp_folder_path, "topo_section_image_temp.png")
-
-        dpi = 100
-        xpixels, ypixels = self.topo_corr_data.shape[1], self.topo_corr_data.shape[0]
-        figsize = xpixels / dpi, ypixels / dpi
-
-        fig = plt.figure(figsize=figsize, dpi=dpi)
-        ax = fig.add_axes([0, 0, 1, 1])
-        ax.axis('off')  # Turn off the axis
-
-        ax.imshow(self.topo_corr_data, cmap='Greys', vmin=self.vmin, vmax=self.vmax, interpolation='bicubic')
-
-        # Save the section as an image file
-        plt.savefig(self.topo_image_path, dpi=dpi, bbox_inches='tight', pad_inches=0, transparent=True)
-        plt.close()
-
-        self.display_section(self.topo_image_path, top_corr=True)
-
-
+class FakeEvent:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
 
 
 

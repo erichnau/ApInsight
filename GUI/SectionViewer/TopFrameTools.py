@@ -1,9 +1,10 @@
 import tkinter as tk
-from tkinter import Frame
+from tkinter import Frame, Canvas
 from PIL import Image, ImageTk
 
 from config_manager import ConfigurationManager
 from GUI.CoordinatesLabel import CoordinatesLabel
+
 
 class TopFrameTools(Frame):
     def __init__(self, parent, section, section_coor, dist, file_name, data_type, depth_m, pixelsize_z, frame_image, frame_left, *args, **kwargs):  # Corrected __int__ to __init__
@@ -97,15 +98,15 @@ class TopFrameTools(Frame):
         vmax_entry.bind('<Return>', self.update_vmin_vmax)
 
     def create_zoom_controls(self):
-        zoom_in_button = tk.Button(self, text="+", command=self.zoom_in)
+        zoom_in_button = tk.Button(self, text="+", command=lambda: self.section_view.zoom_section('in'))
         zoom_in_button.pack(side="left", padx=5, pady=5)
-        zoom_out_button = tk.Button(self, text="-", command=self.zoom_out)
+        zoom_out_button = tk.Button(self, text="-", command=lambda: self.section_view.zoom_section('out'))
         zoom_out_button.pack(side="left", padx=5, pady=5)
 
     def set_zoom_controls(self):
         # Bind right-click drag for panning
-        self.section_canvas.bind("<Button-3>", self.start_pan)
-        self.section_canvas.bind("<B3-Motion>", self.pan_image)
+        self.section_canvas.bind("<Button-3>", self.section_view.start_pan)
+        self.section_canvas.bind("<B3-Motion>", self.section_view.pan_image)
 
     def set_coordinates_label(self):
         self.coordinates_label = CoordinatesLabel(self.section_canvas)
@@ -115,7 +116,7 @@ class TopFrameTools(Frame):
         pass
 
     def add_topography(self):
-        pass
+        self.section_view.add_topography()
 
     def clear_topography(self):
         pass
@@ -131,128 +132,6 @@ class TopFrameTools(Frame):
 
     def reset_to_default_greyscale(self):
         pass
-
-    def start_pan(self, event):
-        self.init_image_position = (event.x, event.y)  # Capture initial position
-
-    def pan_image(self, event):
-        dx = (event.x - self.init_image_position[0])
-        dy = (event.y - self.init_image_position[1])
-
-        self.section_view.pan_offset_x += dx
-        self.section_view.pan_offset_y += dy
-
-        actual_image_width = self.section_image.width()
-        actual_image_height = self.section_image.height()
-
-        current_pos = self.section_canvas.coords(self.canvas_image)
-        new_x = current_pos[0] + dx
-        new_y = current_pos[1] + dy
-
-        if new_x > self.section_view.image_left_bound:
-            dx = self.section_view.image_left_bound - current_pos[0]
-        if new_x + actual_image_width < self.section_view.secondary_y_axis_x:
-            dx = self.section_view.secondary_y_axis_x - 1 - (current_pos[0] + actual_image_width)
-
-        if new_y > self.section_view.image_top_bound:
-            dy = self.section_view.image_top_bound - current_pos[1]
-        elif new_y + actual_image_height < self.section_view.x_axis_y:
-            dy = self.section_view.x_axis_y - 2 - (current_pos[1] + actual_image_height)
-
-        self.section_canvas.move(self.canvas_image, dx, dy)
-        self.section_view.init_image_position = (event.x, event.y)
-        self.init_image_position = (event.x, event.y)
-        self.update_axes_based_on_pan(dx, dy)
-
-    def update_axes_based_on_pan(self, dx, dy):
-        # Adjust the x-axis labels based on the image movement, skip the last label
-        for label in self.section_view.x_labels[:-1]:  # The '[:-1]' slice selects all but the last item
-            self.section_canvas.move(label, dx, 0)
-
-        # Adjust the y-axis labels based on the image movement, skip the last label
-        for label in self.section_view.y_labels[:-1]:  # Similarly, '[:-1]' skips the last item
-            self.section_canvas.move(label, 0, dy)
-
-        # Do the same for secondary y-axis labels if present, skip the last label
-        for label in self.section_view.secondary_y_labels[:-1]:
-            self.section_canvas.move(label, 0, dy)
-
-    def zoom_in(self, cursor_position=None):
-        # Get the current center of the viewport or cursor position
-        if cursor_position is None:
-            viewport_center_x = self.section_canvas.canvasx(self.section_canvas.winfo_width() / 2)
-            viewport_center_y = self.section_canvas.canvasy(self.section_canvas.winfo_height() / 2)
-        else:
-            viewport_center_x, viewport_center_y = cursor_position
-
-        # Calculate the new dimensions
-        new_width = int(self.section_image.width() * 1.1)
-        new_height = int(self.section_image.height() * 1.1)
-
-        self.zoom *= 1.1
-
-        resized_image = self.image.resize((new_width, new_height), Image.LANCZOS)
-        self.section_image = ImageTk.PhotoImage(resized_image)
-
-        # Calculate the new position based on the zoom center
-        current_pos = self.section_canvas.coords(self.canvas_image)
-        new_x = viewport_center_x - (viewport_center_x - current_pos[0]) * 1.1
-        new_y = viewport_center_y - (viewport_center_y - current_pos[1]) * 1.1
-
-        # Apply boundary constraints
-        new_x = min(max(new_x, self.section_view.secondary_y_axis_x - new_width), self.section_view.image_left_bound)
-        new_y = min(max(new_y, self.section_view.x_axis_y - new_height), self.section_view.image_top_bound)
-
-        # Update the image position and zoom
-        self.section_canvas.itemconfig(self.canvas_image, image=self.section_image)
-        self.section_canvas.coords(self.canvas_image, new_x, new_y)
-
-        self.section_view.adjust_window_size(zoom=True)
-        self.section_view.update_axes_after_zoom()
-
-        fake_event = FakeEvent(viewport_center_x, viewport_center_y)
-        self.pan_image(fake_event)
-
-    def zoom_out(self, cursor_position=None):
-        # Get the current center of the viewport or cursor position
-        if cursor_position is None:
-            viewport_center_x = self.section_canvas.canvasx(self.section_canvas.winfo_width() / 2)
-            viewport_center_y = self.section_canvas.canvasy(self.section_canvas.winfo_height() / 2)
-        else:
-            viewport_center_x, viewport_center_y = cursor_position
-
-        self.zoom /= 1.1
-
-        # Calculate the new dimensions, ensuring they do not fall below the actual initial dimensions
-        new_width = max(int(self.section_image.width() / 1.1), self.section_view.actual_image_width)
-        new_height = max(int(self.section_image.height() / 1.1), self.section_view.actual_image_height)
-
-        if new_width == self.section_view.actual_image_width:
-            self.zoom = self.section_view.init_zoom
-
-        resized_image = self.image.resize((new_width, new_height), Image.LANCZOS)
-        self.section_image = ImageTk.PhotoImage(resized_image)
-
-        # Calculate the new position to maintain the zoom center
-        current_pos = self.section_canvas.coords(self.canvas_image)
-        shift_x = (self.section_image.width() - new_width) / 2
-        shift_y = (self.section_image.height() - new_height) / 2
-        new_x = viewport_center_x - (viewport_center_x - current_pos[0]) * (1 / 1.1)
-        new_y = viewport_center_y - (viewport_center_y - current_pos[1]) * (1 / 1.1)
-
-        # Apply boundary constraints
-        new_x = min(max(new_x, self.secondary_y_axis_x - new_width), self.section_view.image_left_bound)
-        new_y = min(max(new_y, self.x_axis_y - new_height), self.section_view.image_top_bound)
-
-        # Update the image position and zoom
-        self.section_canvas.itemconfig(self.canvas_image, image=self.section_image)
-        self.section_canvas.coords(self.canvas_image, new_x, new_y)
-
-        self.section_view.adjust_window_size(zoom=True)
-        self.section_view.update_axes_after_zoom()
-
-        fake_event = FakeEvent(viewport_center_x, viewport_center_y)
-        self.pan_image(fake_event)
 
     def draw_lines(self, event):
         x, y = event.x, event.y
@@ -297,7 +176,7 @@ class TopFrameTools(Frame):
             # Draw horizontal line or plot height profile
             if self.draw_y_line_var.get():
                 if self.topo_corrected:
-                    self.plot_height_profile(y, x)
+                    self.section_view.plot_height_profile(y, x)
                 else:
                     self.section_canvas.create_line(max(image_left, 0), y,
                                                     min(image_right, self.section_canvas.winfo_width()), y,
@@ -324,7 +203,7 @@ class TopFrameTools(Frame):
                 depth = self.get_depth_from_y_data_ft(y)
 
         elif self.topo_corrected:
-            depth = self.get_depth_from_y_data(self.y_coord_max_point) - 5
+            depth = self.get_depth_from_y_data(self.section_view.y_coord_max_point) - 5
         else:
             depth = self.get_depth_from_y_data(y)
 
@@ -335,7 +214,7 @@ class TopFrameTools(Frame):
         if self.data_type == 2:
             depth = depth*100
         if self.topo_corrected:
-            elevation = self.height - depth/100
+            elevation = self.section_view.height - depth/100
         if 'DTMfromGPR' in self.file_name:
             elevation = depth / 100
             depth = self.depth_from_ds
@@ -368,9 +247,5 @@ class TopFrameTools(Frame):
         return depth_value
 
 
-class FakeEvent:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
 
 
