@@ -11,6 +11,7 @@ from GPR_func._2D_vertical import check_section_array
 
 #from GUI.SectionViewer_old import SectionView
 from GUI.SectionViewer.SectionView import SectionView
+from data.ProjectData import ArbSectionData
 
 
 class RightFrame(Frame):
@@ -239,9 +240,9 @@ class RightFrame(Frame):
                 dtm_files = data.DTM_files
 
                 # Create the SectionView window with the new coordinates
-                self.section_view_window = SectionView(section, depth_m, dist, project_file_path, sampling_interval,
-                                                   dtm_files, section_coor, data.fld_file.pixelsize_z, self.frame_image,
-                                                   self.frame_left, self.top_frame, data_type, top_removed, bottom_removed, depth_table, self)
+                arb_section = ArbSectionData(section, depth_m, dist, sampling_interval, dtm_files, section_coor, data.fld_file.pixelsize_z, data_type, top_removed, bottom_removed, depth_table)
+
+                self.section_view_window = SectionView(arb_section, project_file_path, self.frame_image, self.frame_left, self.top_frame, self)
 
                 self.frame_left.define_section_view(self.section_view_window)
                 self.frame_image.define_section_view(self.section_view_window)
