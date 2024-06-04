@@ -1,13 +1,15 @@
 import tkinter as tk
-from tkinter import messagebox, filedialog, PhotoImage
+from tkinter import filedialog, PhotoImage
 import matplotlib.pyplot as plt
-from PIL import Image, ImageTk
+from PIL import Image
 import os
 from screeninfo import get_monitors
 import numpy as np
 import platform
 
 from config_manager import ConfigurationManager
+from GUI.SectionViewer.TopFrameTools import TopFrameTools
+from GUI.SectionViewer.SectionCanvas import SectionCanvas
 
 monitors = get_monitors()
 screen_res_primary = [monitors[0].height, monitors[0].width]
@@ -16,19 +18,14 @@ global window_width, window_height
 window_width = int(screen_res_primary[1]*1)
 window_height = int(screen_res_primary[0]*0.50)
 
-from GUI.SectionViewer.TopFrameTools import TopFrameTools
-from GUI.SectionViewer.DTMFileSelector import DTMFileSelector
-
 
 class SectionView(tk.Toplevel):
     def __init__(self, arb_section, project_file_path, frame_image, frame_left, top_frame, frame_right):
         super().__init__()
         self.section = arb_section
 
-        self.section_view = self
-
         self.title("Section View")
-        if platform.system() =='Windows':
+        if platform.system() == 'Windows':
             self.iconbitmap('icon2.ico')
         else:
             icon_image = PhotoImage(file='icon2.png')
@@ -45,377 +42,61 @@ class SectionView(tk.Toplevel):
         self.top_frame = top_frame
         self.frame_right = frame_right
 
-        self.image_path = None
-        self.height_profile = None
         self.project_file_path = project_file_path
         self.file_name = self.frame_left.active_file_name
 
-        self.vmin = int(self.config_manager.get_option('Greyscale', 'vmin'))
-        self.vmax = int(self.config_manager.get_option('Greyscale', 'vmax'))
-        self.initial_window_size=False
-
-        self.zoom_level = 1  # Track zoom level
-        self.init_image_position = (0, 0)  # Initial image position
-
-        self.x_axis = None
-        self.mask_tag = None
-        self.pan_offset_x = 0
-        self.pan_offset_y = 0
-
+        self.create_temporary_folder()
         self.create_top_frame()
         self.create_widgets()
         self._set_image_canvas()
+        self._set_section_window()
 
-        self.create_temporary_folder()
-
-        self.image_path = self.section.create_image_from_section(self.temp_folder_path, self.vmin, self.vmax)
-        self.display_section(self.image_path)
+        self.image_path = self.section.create_image_from_section(self.temp_folder_path, self.tf.vmin, self.tf.vmax)
+        self.section_canvas.display_section(self.image_path)
 
         self._set_canvas_variables()
 
+
     def create_top_frame(self):
-        self.tf = TopFrameTools(self, self.section.section_data, self.section.section_coor, self.section.dist, self.file_name, self.section.data_type, self.section.depth_m, self.section.pixelsize_z, self.frame_image, self.frame_left)
+        self.tf = TopFrameTools(self, self.section.section_data)
         self.tf.pack(side="top", fill="x")
+        self.frame_left.set_top_frame_tools(self.tf)
+
 
     def _set_image_canvas(self):
         self.tf.section_canvas = self.section_canvas
 
+
+    def _set_section_window(self):
+        self.section_canvas.section_window = self
+        self.section_canvas.tf = self.tf
+
+
     def _set_canvas_variables(self):
-        self.tf.canvas_image = self.canvas_image
-        self.tf.x_axis_y = self.x_axis_y
-        self.tf.y_axis_x = self.y_axis_x
-        self.tf.secondary_y_axis_x = self.secondary_y_axis_x
-        self.tf.zoom = self.zoom
-        self.tf.section_image = self.section_image
-        self.tf.section_view = self.section_view
-        self.tf.image = self.image
-        self.tf.set_coordinates_label()
+        self.tf.canvas_image = self.section_canvas.canvas_image
+        self.tf.x_axis_y = self.section_canvas.x_axis_y
+        self.tf.y_axis_x = self.section_canvas.y_axis_x
+        self.tf.secondary_y_axis_x = self.section_canvas.secondary_y_axis_x
+        self.tf.zoom = self.section_canvas.zoom
+        self.tf.section_image = self.section_canvas.section_image
+        self.tf.section_window = self
+        self.tf.image = self.section_canvas.image
         self.tf.set_zoom_controls()
 
-
     def create_widgets(self):
-        # Calculate the size of the image frame
         window_width = self.winfo_width()
         window_height = self.winfo_height()
         frame_width = int(window_width * 0.8)
         frame_height = int(window_height * 0.8)
 
-        # Create an image frame with a canvas and a border
         image_frame = tk.Frame(self, width=frame_width, height=frame_height, relief="solid", borderwidth=1)
         image_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         self.pack_propagate(True)
 
-        self.section_canvas = tk.Canvas(image_frame, bg="white")
+        self.section_canvas = SectionCanvas(image_frame, self.section, self.temp_folder_path, bg="white")
         self.section_canvas.pack(fill="both", expand=True)
 
-        self.y_labels = []  # list to store y-axis labels
-        self.x_labels = []  # list to store x-axis labels
-        self.secondary_y_labels = []
-        self.additional_labels = []
-
-
-    def start_pan(self, event):
-        self.init_image_position = (event.x, event.y)  # Capture initial position
-
-    def pan_image(self, event):
-        dx = (event.x - self.init_image_position[0])
-        dy = (event.y - self.init_image_position[1])
-
-        self.pan_offset_x += dx
-        self.pan_offset_y += dy
-
-        actual_image_width = self.section_image.width()
-        actual_image_height = self.section_image.height()
-
-        current_pos = self.section_canvas.coords(self.canvas_image)
-        new_x = current_pos[0] + dx
-        new_y = current_pos[1] + dy
-
-        if new_x > self.image_left_bound:
-            dx = self.image_left_bound - current_pos[0]
-        if new_x + actual_image_width < self.secondary_y_axis_x:
-            dx = self.secondary_y_axis_x - 1 - (current_pos[0] + actual_image_width)
-
-        if new_y > self.image_top_bound:
-            dy = self.image_top_bound - current_pos[1]
-        elif new_y + actual_image_height < self.x_axis_y:
-            dy = self.x_axis_y - 2 - (current_pos[1] + actual_image_height)
-
-        self.section_canvas.move(self.canvas_image, dx, dy)
-        self.init_image_position = (event.x, event.y)
-        self.update_axes_based_on_pan(dx, dy)
-
-    def update_axes_based_on_pan(self, dx, dy):
-        # Adjust the x-axis labels based on the image movement, skip the last label
-        for label in self.x_labels[:-1]:  # The '[:-1]' slice selects all but the last item
-            self.section_canvas.move(label, dx, 0)
-
-        # Adjust the y-axis labels based on the image movement, skip the last label
-        for label in self.y_labels[:-1]:  # Similarly, '[:-1]' skips the last item
-            self.section_canvas.move(label, 0, dy)
-
-        # Do the same for secondary y-axis labels if present, skip the last label
-        for label in self.secondary_y_labels[:-1]:
-            self.section_canvas.move(label, 0, dy)
-
-
-    def zoom_section(self, direction='in', cursor_position=None):
-        # Determine the zoom factor
-        if direction == 'in':
-            zoom_factor = 1.1
-        elif direction == 'out':
-            zoom_factor = 1 / 1.1
-        else:
-            raise ValueError("Invalid zoom direction. Use 'in' or 'out'.")
-
-        # Get the current center of the viewport or cursor position
-        if cursor_position is None:
-            viewport_center_x = self.section_canvas.canvasx(self.section_canvas.winfo_width() / 2)
-            viewport_center_y = self.section_canvas.canvasy(self.section_canvas.winfo_height() / 2)
-        else:
-            viewport_center_x, viewport_center_y = cursor_position
-
-        # Calculate the new dimensions
-        new_width = int(self.section_image.width() * zoom_factor)
-        new_height = int(self.section_image.height() * zoom_factor)
-
-        if direction == 'in':
-            self.zoom *= zoom_factor
-        else:
-            self.zoom /= zoom_factor
-
-        # Ensure dimensions do not fall below the actual initial dimensions when zooming out
-        if direction == 'out':
-            new_width = max(new_width, self.actual_image_width)
-            new_height = max(new_height, self.actual_image_height)
-            if new_width == self.actual_image_width:
-                self.zoom = self.init_zoom
-
-        resized_image = self.image.resize((new_width, new_height), Image.LANCZOS)
-        self.section_image = ImageTk.PhotoImage(resized_image)
-
-        # Calculate the new position based on the zoom center
-        current_pos = self.section_canvas.coords(self.canvas_image)
-        if direction == 'in':
-            new_x = viewport_center_x - (viewport_center_x - current_pos[0]) * zoom_factor
-            new_y = viewport_center_y - (viewport_center_y - current_pos[1]) * zoom_factor
-        else:
-            shift_x = (self.section_image.width() - new_width) / 2
-            shift_y = (self.section_image.height() - new_height) / 2
-            new_x = viewport_center_x - (viewport_center_x - current_pos[0]) * (1 / zoom_factor)
-            new_y = viewport_center_y - (viewport_center_y - current_pos[1]) * (1 / zoom_factor)
-
-        # Apply boundary constraints
-        new_x = min(max(new_x, self.secondary_y_axis_x - new_width), self.image_left_bound)
-        new_y = min(max(new_y, self.x_axis_y - new_height), self.image_top_bound)
-
-        # Update the image position and zoom
-        self.section_canvas.itemconfig(self.canvas_image, image=self.section_image)
-        self.section_canvas.coords(self.canvas_image, new_x, new_y)
-
-        self.adjust_window_size(zoom=True)
-        self.update_axes_after_zoom()
-
-        fake_event = FakeEvent(viewport_center_x, viewport_center_y)
-        self.pan_image(fake_event)
-
-
-    def update_axes_after_zoom(self):
-        # Get the current canvas (or window) height and width
-        canvas_width = self.section_canvas.winfo_width()
-        canvas_height = self.section_canvas.winfo_height()
-
-        # Calculate maximum allowed positions for the axes based on the canvas dimensions
-        max_x_axis_y = canvas_height - 80  # Subtracting 50 for padding
-        max_secondary_y_axis_x = canvas_width - 50  # Subtracting 50 for padding
-
-        # Calculate new positions for the axes based on the zoomed image dimensions
-        proposed_x_axis_y = self.section_image.height() + 12
-        proposed_secondary_y_axis_x = self.y_axis_x + self.section_image.width()
-
-        # Apply the maximum constraints
-        self.x_axis_y = min(proposed_x_axis_y, max_x_axis_y)
-        self.secondary_y_axis_x = min(proposed_secondary_y_axis_x, max_secondary_y_axis_x)
-
-        # Update the axes lines to the new positions
-        self.section_canvas.coords(self.x_axis, self.y_axis_x, self.x_axis_y, self.secondary_y_axis_x, self.x_axis_y)
-        self.section_canvas.coords(self.y_axis, self.y_axis_x, 10, self.y_axis_x, self.x_axis_y)
-        self.section_canvas.coords(self.secondary_y_axis, self.secondary_y_axis_x, 10, self.secondary_y_axis_x,
-                                   self.x_axis_y)
-
-        # Recreate masks to fit the new dimensions
-        self.create_masks()
-        self.update_x_labels_for_full_image()
-        self.update_y_labels_for_full_image(primary=True)
-        self.update_y_labels_for_full_image(primary=False)
-        self.update_label_positions()
-
-    def update_x_labels_for_full_image(self):
-        num_visible_labels = 5  # Number of labels always visible in the viewport
-
-        # Calculate the visible width in pixels
-        actual_x0 = self.section_canvas.coords(self.canvas_image)[0]
-        canvas_width = self.section_canvas.winfo_width()
-        visible_width_pixels = min(canvas_width - max(actual_x0, 0), self.section_image.width())
-
-        # The ratio of pixels to meters for the full image
-        pixel_to_meter_ratio = self.section.dist / self.section_image.width()
-
-        # Calculate the interval in meters between labels for the visible part
-        label_interval_pixels = visible_width_pixels / (num_visible_labels - 1)
-
-        # Total number of labels needed for the entire image, based on the same interval
-        total_labels_needed = int(self.section_image.width() / label_interval_pixels) + 2
-
-        # Ensure there are enough labels, create more if needed
-        while len(self.x_labels) < total_labels_needed:
-            label = self.section_canvas.create_text(0, self.x_axis_y + 10, text="", anchor='n')
-            self.x_labels.append(label)
-
-        # Update positions and texts of all labels for the entire image width
-        for i in range(total_labels_needed):
-            label_x = actual_x0 + i * label_interval_pixels
-            label_text = f"{i * label_interval_pixels * pixel_to_meter_ratio:.1f}"
-            self.section_canvas.coords(self.x_labels[i], label_x, self.x_axis_y + 10)
-            self.section_canvas.itemconfig(self.x_labels[i], text=label_text)
-
-        # Remove excess labels if necessary
-        for i in range(len(self.x_labels) - 1, total_labels_needed - 1, -1):
-            self.section_canvas.delete(self.x_labels.pop(i))
-
-        # Ensure all labels are raised to be visible
-        for label in self.x_labels:
-            self.section_canvas.tag_raise(label)
-
-    def update_y_labels_for_full_image(self, primary=True):
-        num_visible_labels = 5  # Desired number of labels in the visible area
-
-        # Determine the visible height in pixels and calculate depth parameters
-        visible_height_pixels = self.x_axis_y - 10
-        total_height_pixels = self.section_image.height()
-
-        actual_y0 = self.section_canvas.coords(self.canvas_image)[1]
-
-        if self.topo_corrected:
-            min_height = min(self.height_profile)
-            max_height = max(self.height_profile)
-            total_depth_meters = self.section.depth_m + max_height - min_height
-        else:
-            total_depth_meters = self.section.depth_m
-
-        depth_per_pixel = total_depth_meters / total_height_pixels
-        visible_depth_meters = visible_height_pixels * depth_per_pixel
-        label_interval_meters = visible_depth_meters / (num_visible_labels - 1)
-        total_labels_needed = int(total_height_pixels / (label_interval_meters / depth_per_pixel)) + 2
-
-        # Choose which label list and axis position to use based on the 'primary' parameter
-        labels = self.y_labels if primary else self.secondary_y_labels
-        axis_x_position = self.y_axis_x - 5 if primary else self.secondary_y_axis_x + 5
-        anchor = 'e' if primary else 'w'
-
-        # Ensure there are enough labels
-        while len(labels) < total_labels_needed:
-            label = self.section_canvas.create_text(axis_x_position, 0, text="", anchor=anchor)
-            labels.append(label)
-
-        # Update positions and texts of all labels for the entire image height
-        for i in range(total_labels_needed):
-            label_y = actual_y0 + i * (label_interval_meters / depth_per_pixel)
-            if self.topo_corrected:
-                # For topo_corrected, calculate label based on elevation differences
-                label_text = f"{max_height - i * label_interval_meters:.1f}"
-            else:
-                # Regular depth labels
-                label_text = f"{i * label_interval_meters:.1f}"
-
-            self.section_canvas.coords(labels[i], axis_x_position, label_y)
-            self.section_canvas.itemconfig(labels[i], text=label_text)
-
-        # Remove excess labels if necessary
-        for i in range(len(labels) - 1, total_labels_needed - 1, -1):
-            self.section_canvas.delete(labels.pop(i))
-
-        # Raise all labels to ensure they are visible
-        for label in labels:
-            self.section_canvas.tag_raise(label)
-
-    def update_label_positions(self):
-        for i, label in enumerate(self.additional_labels):
-            tag = self.section_canvas.gettags(label)[0]
-            if tag == 'dist_label':
-                distance_label_x = int((self.y_axis_x + self.secondary_y_axis_x) / 2)
-                distance_label_y = self.x_axis_y + 25  # adjust the y-coordinate for the depth label as needed
-                self.section_canvas.coords(label, distance_label_x, distance_label_y)
-
-            elif tag == 'depth_label':
-                depth_label_x = self.y_axis_x - 40
-                depth_label_y = int((10 + self.x_axis_y) / 2)
-                self.section_canvas.coords(label, depth_label_x, depth_label_y)
-
-            elif tag == 'sec_depth_label':
-                depth_label_x = self.secondary_y_axis_x + 40
-                depth_label_y = int((10 + self.x_axis_y) / 2)
-                self.section_canvas.coords(label, depth_label_x, depth_label_y)
-
-        for label in self.additional_labels:
-            self.section_canvas.tag_raise(label)
-
-    def adjust_vmin(self, adjustment):
-        new_vmin = self.vmin + adjustment
-        if new_vmin < self.vmax:
-            self.vmin = new_vmin
-            self.vmin_var.set(int(self.vmin))
-            self.regenerate_and_refresh_image()
-        else:
-            self.show_error_message("Invalid Adjustment", "vmin cannot be equal or greater than vmax.")
-
-    def adjust_vmax(self, adjustment):
-        new_vmax = self.vmax + adjustment
-        if new_vmax > self.vmin:
-            self.vmax = new_vmax
-            self.vmax_var.set(int(self.vmax))
-            self.regenerate_and_refresh_image()
-        else:
-            self.show_error_message("Invalid Adjustment", "vmax cannot be equal or less than vmin.")
-
-    def update_vmin_vmax(self, event=None):
-        try:
-            vmin = int(self.vmin_var.get())
-            vmax = int(self.vmax_var.get())
-
-            if vmin < vmax:
-                self.vmin = vmin
-                self.vmax = vmax
-                self.regenerate_and_refresh_image()
-            else:
-                self.show_error_message("Invalid Input", "Ensure that vmin is less than vmax.")
-        except ValueError:
-            self.show_error_message("Invalid Input", "Please enter numeric values for vmin and vmax.")
-
-    def show_error_message(self, title, message):
-        messagebox.showerror(title, message)
-        self.focus_set()  # Set the focus back to the SectionView window
-        self.lift()  # Bring the SectionView window to the front
-
-    def regenerate_and_refresh_image(self):
-        # Regenerate the image with the new vmin and vmax values
-        if self.topo_corrected:
-            self.section.save_topo_corrected_section(self.temp_folder_path, self.vmin, self.vmax)
-        else:
-            self.image_path = self.section.create_image_from_section(self.temp_folder_path, self.vmin, self.vmax)
-            self.display_section(self.image_path, top_corr=self.topo_corrected, update_vmin_vmax=True)
-
-    def reset_to_default_greyscale(self):
-        # Retrieve vmin and vmax values from the configuration file
-        default_vmin = int(self.config_manager.get_option('Greyscale', 'vmin'))
-        default_vmax = int(self.config_manager.get_option('Greyscale', 'vmax'))
-
-        # Update the entry widgets with default values
-        self.vmin_var.set(default_vmin)
-        self.vmax_var.set(default_vmax)
-
-        self.update_vmin_vmax()
 
     def cleanup(self):
         self.section_canvas.unbind('<Motion>')
@@ -452,128 +133,6 @@ class SectionView(tk.Toplevel):
         os.makedirs(self.temp_folder_path, exist_ok=True)
 
 
-    def display_section(self, image_path, top_corr=False, update_vmin_vmax=False, clear_topo=False):
-        self.image = Image.open(image_path)
-        self.section_image = ImageTk.PhotoImage(self.image)
-
-        self.canvas_image = self.section_canvas.create_image(0, 0, anchor='nw', image=self.section_image)
-
-        # Configure canvas scrollregion and update
-        self.section_canvas.configure(scrollregion=self.section_canvas.bbox('all'))
-        self.section_canvas.update()
-
-        # Resize the image and update axes
-        if not update_vmin_vmax:
-            if top_corr:
-                self.resize_image_to_canvas(top_corr=True)
-                self.topo_corrected = True
-                self.tf.topo_corrected = True
-            else:
-                if clear_topo:
-                    self.resize_image_to_canvas(clear_topo=True)
-                    self.topo_corrected = False
-                    self.tf.topo_corrected = False
-                else:
-                    self.resize_image_to_canvas()
-                    self.topo_corrected = False
-                    self.tf.topo_corrected = False
-        else:
-            if top_corr:
-                self.resize_image_to_canvas(top_corr=True, update_vmin_vmax=True)
-                self.topo_corrected = True
-                self.tf.topo_corrected = True
-            else:
-                self.resize_image_to_canvas(update_vmin_vmax=True)
-                self.topo_corrected = False
-                self.tf.topo_corrected = False
-
-
-    def resize_image_to_canvas(self, top_corr=False, update_vmin_vmax=False, clear_topo=False):
-        # Get the size of the canvas and the scaled image
-        canvas_width = self.section_canvas.winfo_width()
-        canvas_height = self.section_canvas.winfo_height()
-        image_width = self.section_image.width()
-        image_height = self.section_image.height()
-
-        # Calculate the available space for the image (canvas size minus axis)
-        available_width = canvas_width - 120  # adjust based on the axis width
-        available_height = canvas_height - 70  # adjust based on the axis height
-
-        # Calculate the zoom level to fit the image in the available width and height
-        zoom_x = available_width / image_width
-        zoom_y = available_height / image_height
-
-        if top_corr:
-            # Calculate the required canvas height to accommodate the corrected section
-            required_canvas_height = image_height + 70  # Account for axis height
-
-            # Adjust the canvas height if necessary
-            if required_canvas_height > canvas_height:
-                self.section_canvas.config(height=required_canvas_height)
-
-            self.resized_width = int(image_width * self.zoom)
-            self.resized_height = int(image_height * self.zoom)
-
-            self.resized_height_topo = self.resized_height
-            resize_factor = self.resized_height_topo/self.image_height_orig
-
-            resized_image = self.image.resize((self.resized_width, self.resized_height), Image.LANCZOS)
-            resized_image.save(self.temp_folder_path + 'resized_topo_image.png')
-
-            if not update_vmin_vmax:
-                self.adjust_window_size()
-        else:
-            # Use the smaller of zoom_x and zoom_y for standard section
-            self.zoom = min(zoom_x, zoom_y)
-            self.init_zoom = self.zoom
-
-            # Resize the image
-            self.resized_width = int(image_width * self.zoom)
-            self.resized_height = int(image_height * self.zoom)
-            self.image_height_orig = self.resized_height
-
-            resized_image = self.image.resize((self.resized_width, self.resized_height), Image.LANCZOS)
-            resized_image.save(self.temp_folder_path + 'resized_image.png')
-
-            if not update_vmin_vmax and not clear_topo:
-                self.adjust_window_size()
-                if not clear_topo:
-                    self.orig_window_width = self.winfo_width()
-                    self.orig_window_height = self.winfo_height()
-            elif clear_topo:
-                self.adjust_window_size(clear_topo=True)
-
-        # Calculate the position to place the image (accounting for the axis)
-        x_offset = 50  # adjust based on the axis width
-        y_offset = 0  # adjust based on the axis height
-
-        # Update the section image on the canvas
-        self.section_image = ImageTk.PhotoImage(resized_image)
-        self.section_canvas.itemconfig(self.canvas_image, image=self.section_image)
-        self.section_canvas.coords(self.canvas_image, x_offset + 1, y_offset + 10)
-
-        # Configure canvas scrollregion and update
-        self.section_canvas.configure(scrollregion=self.section_canvas.bbox('all'))
-        self.section_canvas.update_idletasks()
-
-        if top_corr:
-            self.update_axes(top_corr=True)
-        else:
-            self.update_axes()
-
-        self.section_canvas.bind('<Motion>', self.tf.draw_lines)
-
-        self.init_image_pos = self.section_canvas.coords(self.canvas_image)
-
-        self.actual_image_width = self.section_image.width()
-        self.actual_image_height = self.section_image.height()
-
-        self.image_left_bound = self.init_image_pos[0]
-        self.image_right_bound = self.image_left_bound + self.actual_image_width
-        self.image_top_bound = self.init_image_pos[1]
-        self.image_bottom_bound = self.image_top_bound + self.actual_image_height
-
-
     def calculate_frame_width(self, frame):
         max_width = 0
 
@@ -591,16 +150,15 @@ class SectionView(tk.Toplevel):
 
         return max_width
 
-
-    def adjust_window_size(self, clear_topo=False, zoom=False):
+    def adjust_window_size(self, resized_width, resized_height, clear_topo=False, zoom=False):
         top_frame_width = self.calculate_frame_width(self.tf) + 50
 
         # Determine the width for the section image
-        image_frame_width = self.resized_width + 200
+        image_frame_width = resized_width + 200
 
         # Set the window width to the maximum of the two widths
         window_width = max(top_frame_width, image_frame_width)
-        window_height = self.resized_height + 200
+        window_height = resized_height + 200
 
         if clear_topo:
             window_width = min(window_width, int(screen_res_primary[1]*1))
@@ -611,8 +169,8 @@ class SectionView(tk.Toplevel):
             max_width = int(screen_res_primary[1] * 1)
             max_height = int(screen_res_primary[0] * 0.55)
 
-            current_image_width = self.section_image.width()
-            current_image_height = self.section_image.height()
+            current_image_width = self.section_canvas.section_image.width()
+            current_image_height = self.section_canvas.section_image.height()
 
             # Determine the width for the section image including some padding
             image_frame_width = current_image_width + 200
@@ -647,268 +205,21 @@ class SectionView(tk.Toplevel):
         self.section_canvas.configure(scrollregion=self.section_canvas.bbox('all'))
         self.section_canvas.update_idletasks()
 
-    def update_axes(self, top_corr=False):
-        if self.x_axis is not None:
-            self.section_canvas.delete(self.x_axis)
-            self.section_canvas.delete(self.y_axis)
-            self.section_canvas.delete(self.secondary_y_axis)
-
-        self.x_axis = self.section_canvas.create_line(0, 0, 0, 0, fill='black', width=2)  # x-axis line
-        self.y_axis = self.section_canvas.create_line(0, 0, 0, 0, fill='black', width=2)  # y-axis line
-        self.secondary_y_axis = self.section_canvas.create_line(0, 0, 0, 0, fill='black', width=2)  # y-axis line
-
-        # Calculate the positions for the x-axis and y-axis lines
-        self.x_axis_y = self.section_image.height() + 12
-        self.y_axis_x = 50  # adjust the x-coordinate for y-axis line as needed
-        self.secondary_y_axis_x = self.section_image.width() + self.y_axis_x + 2
-
-        self.create_masks()
-
-        # Update the x-axis line
-        self.section_canvas.coords(self.x_axis, self.y_axis_x, self.x_axis_y, self.secondary_y_axis_x, self.x_axis_y)
-
-        # Update the y-axis line
-        self.section_canvas.coords(self.y_axis, self.y_axis_x, 10, self.y_axis_x, self.x_axis_y)
-
-        self.section_canvas.coords(self.secondary_y_axis, self.secondary_y_axis_x, 10, self.secondary_y_axis_x, self.x_axis_y)
-
-        # Remove existing x-axis labels
-        for label in self.x_labels:
-            self.section_canvas.delete(label)
-        self.x_labels = []  # list to store x-axis labels
-
-        # Remove existing y-axis labels
-        for label in self.y_labels:
-            self.section_canvas.delete(label)
-        self.y_labels = []  # list to store y-axis labels
-
-        # Remove existing secondary y-axis labels
-        for label in self.secondary_y_labels:
-            self.section_canvas.delete(label)
-        self.secondary_y_labels = []
-
-        for label in self.additional_labels:
-            self.section_canvas.delete(label)
-        self.additional_labels = []
-
-        # Calculate the depth and distance tick values
-        if top_corr:
-            # Calculate the number of depth ticks based on height profile length
-            min_height = min(self.height_profile)
-            max_height = max(self.height_profile)
-
-            min_depth = min_height - self.section.depth_m
-
-            num_depth_ticks = 5  # Adjust the number of ticks as needed
-            height_ticks = np.linspace(max(self.height_profile), min(self.height_profile) - self.section.depth_m,
-                                           num=num_depth_ticks)
-
-            # Convert height ticks to depth based on height profile
-            self.depth_ticks = max(self.height_profile) - height_ticks
-
-            self.min_depth_new = min_depth
-            self.max_depth_new = max_height
-            self.depth_ticks = np.linspace(self.max_depth_new, self.min_depth_new, num=5)
-
-        elif 'DTMfromGPR' in self.file_name:
-            # Use the max and min depths from the frame_image
-            min_depth = round((self.frame_left.min_depth/100), 2)
-            max_depth = round((self.frame_left.max_depth/100), 2)
-
-            self.min_depth_new = min_depth + self.section.bottom_removed * self.section.pixelsize_z
-            self.max_depth_new = max_depth - self.section.top_removed * self.section.pixelsize_z
-
-            # Calculate the depth ticks using max and min depths
-            self.depth_ticks = np.linspace(self.max_depth_new, self.min_depth_new, num=5)
-
-        else:
-            self.depth_ticks = np.linspace(0, self.section.depth_m, num=5)
-
-        distance_ticks = np.linspace(0, self.section.dist, num=5)  # Adjust the number of ticks as needed
-
-        # Add new y-axis labels
-        y_label_interval = (self.x_axis_y - 10) / (len(self.depth_ticks) - 1)
-        for i, depth in enumerate(self.depth_ticks):
-            label_y = 10 + i * y_label_interval
-
-            if 'DTMfromGPR' in self.file_name:
-                # Use depth value directly for DTMfromGPR case
-                label_text = f"{depth:.1f}"
-            elif top_corr:
-                label_text = f"{depth:.1f}"
-            else:
-                label_text = f"{depth:.1f}"  # Use regular depth value for standard section
-
-            label = self.section_canvas.create_text(self.y_axis_x - 5, label_y, anchor='e', text=label_text, tags='label_y')
-            self.y_labels.append(label)
-
-            secondary_label = self.section_canvas.create_text(self.secondary_y_axis_x + 5, label_y, anchor='w',
-                                                                  text=str(label_text), tags='label_y')
-            self.secondary_y_labels.append(secondary_label)
-
-        # Add new x-axis labels
-        x_label_interval = (self.secondary_y_axis_x - self.y_axis_x) / (len(distance_ticks) - 1)
-        for i, distance in enumerate(distance_ticks):
-            label_x = self.y_axis_x + i * x_label_interval
-            label_text = f"{distance:.1f}"  # Format the distance value as needed
-            label = self.section_canvas.create_text(label_x, self.x_axis_y + 10, anchor='n', text=label_text, tags='label_x')
-            self.x_labels.append(label)
-
-        self.init_y_x_labels = self.x_axis_y+10
-
-        # Add distance label
-        distance_label_x = int((self.y_axis_x + self.secondary_y_axis_x) / 2)
-        distance_label_y = self.x_axis_y + 25  # adjust the y-coordinate for the depth label as needed
-        distance_label = self.section_canvas.create_text(distance_label_x, distance_label_y, anchor='n',
-                                                         text='Distance (m)', font=("Arial", 11, "bold"), tags='dist_label')
-        self.additional_labels.append(distance_label)
-
-        if 'DTMfromGPR' in self.file_name:
-            # Add depth label
-            depth_label_x = self.y_axis_x - 40
-            depth_label_y = int((10 + self.x_axis_y) / 2)
-        elif top_corr:
-            # Add depth label
-            depth_label_x = self.y_axis_x - 40
-            depth_label_y = int((10 + self.x_axis_y) / 2)
-        else:
-            # Add depth label
-            depth_label_x = self.y_axis_x - 35
-            depth_label_y = int((10 + self.x_axis_y) / 2)
-
-        if top_corr:
-            depth_label_text = 'Elevation (m)'  # Update label text for topo-corrected sections
-        elif 'DTMfromGPR' in self.file_name:
-            depth_label_text = 'Elevation (m)'  # Update label text for topo-corrected sections
-        else:
-            depth_label_text = 'Depth (m)'  # Use regular label text for standard section
-
-        depth_label = self.section_canvas.create_text(depth_label_x, depth_label_y, anchor='e',
-                                                      text=depth_label_text, angle=90,
-                                                      font=("Arial", 11, "bold"), tags='depth_label')
-        self.additional_labels.append(depth_label)
-
-
-        if 'DTMfromGPR' in self.file_name:
-            # Add secondary depth label
-            secondary_depth_label_x = self.secondary_y_axis_x + 40  # adjust the x-coordinate for the secondary depth label as needed
-            secondary_depth_label_y = int((10 + self.x_axis_y) / 2)
-        elif top_corr:
-            secondary_depth_label_x = self.secondary_y_axis_x + 40  # adjust the x-coordinate for the secondary depth label as needed
-            secondary_depth_label_y = int((10 + self.x_axis_y) / 2)
-        else:
-            secondary_depth_label_x = self.secondary_y_axis_x + 35  # adjust the x-coordinate for the secondary depth label as needed
-            secondary_depth_label_y = int((10 + self.x_axis_y) / 2)
-
-        if top_corr:
-            secondary_depth_label_text = 'Elevation (m)'  # Update label text for topo-corrected sections
-        elif 'DTMfromGPR' in self.file_name:
-            secondary_depth_label_text = 'Elevation (m)'  # Update label text for topo-corrected sections
-        else:
-            secondary_depth_label_text = 'Depth (m)'  # Use regular label text for standard section
-
-        secondary_depth_label = self.section_canvas.create_text(secondary_depth_label_x, secondary_depth_label_y,
-                                                                anchor='e', text=secondary_depth_label_text, angle=90,
-                                                                font=("Arial", 11, "bold"), tags='sec_depth_label')
-        self.additional_labels.append(secondary_depth_label)
-
-    def create_masks(self):
-        # Assuming self.canvas is your Tkinter Canvas instance
-        canvas_width = self.section_canvas.winfo_width()
-        canvas_height = self.section_canvas.winfo_height()
-
-        if self.mask_tag is not None:
-            self.section_canvas.delete("mask")
-
-        # Color to match the background or any color that indicates a non-visible area
-        mask_color = 'white'
-        self.mask_tag = 'mask'
-
-        # Top mask
-        self.section_canvas.create_rectangle(-100, -100, canvas_width + 100, 10, fill=mask_color, outline=mask_color,
-                                             tags=self.mask_tag)
-
-        # Bottom mask
-        self.section_canvas.create_rectangle(-100, self.x_axis_y + 1, canvas_width + 100, canvas_height + 100,
-                                             fill=mask_color,
-                                             outline=mask_color, tags=self.mask_tag)
-
-        # Left mask
-        self.section_canvas.create_rectangle(-100, -100, self.y_axis_x - 2, canvas_height + 100, fill=mask_color,
-                                             outline=mask_color, tags=self.mask_tag)
-
-        # Right mask
-        self.section_canvas.create_rectangle(self.secondary_y_axis_x + 1, -100, canvas_width + 100, canvas_height + 100,
-                                             fill=mask_color,
-                                             outline=mask_color, tags=self.mask_tag)
 
     def get_closest_indx_height_profile(self, x_data):
         # Get the image top left corner coordinates
-        image_left, image_top = self.section_canvas.coords(self.canvas_image)[0:2]
+        image_left, image_top = self.section_canvas.coords(self.section_canvas.canvas_image)[0:2]
 
         # Calculate the total length of the downsampled height profile in meters
-        total_length_meters = len(self.downsampled_height_profile) * self.section.sampling_interval
+        total_length_meters = len(self.section_canvas.downsampled_height_profile) * self.section.sampling_interval
 
         # Calculate the scaling factor for converting x_data to index in the height profile array
-        self.scale_factor = self.section_image.width() / total_length_meters
+        self.scale_factor = self.section_canvas.section_image.width() / total_length_meters
 
         closest_index = int(round((x_data - image_left) / (self.section.sampling_interval * self.scale_factor)))
 
         return closest_index
 
-    def plot_height_profile(self, y_data, x_data=None, use_ds=False):
-        # Clear any previous height profile lines
-        self.section_canvas.delete('height_profile_line')
-
-        # Get the image top left corner coordinates
-        image_left, image_top = self.section_canvas.coords(self.canvas_image)[0:2]
-
-        min_height = min(self.downsampled_height_profile)
-        max_height = np.argmax(self.downsampled_height_profile)
-
-        # Calculate the total length of the downsampled height profile in meters
-        total_length_meters = len(self.downsampled_height_profile) * self.section.sampling_interval
-
-        # Calculate the scaling factor for converting x_data to index in the height profile array
-        self.scale_factor = self.section_image.width() / total_length_meters
-
-        height_points = []
-
-        if use_ds:
-            closest_index = np.argmax(self.downsampled_height_profile) + 1
-        else:
-            closest_index = int(round((x_data - image_left) / (self.section.sampling_interval * self.scale_factor)))
-            self.height = self.downsampled_height_profile[closest_index - 1]
-
-        # Calculate the y-coordinate offset for this height point based on the closest index
-        y_offset = (y_data + (self.downsampled_height_profile[closest_index - 1] - min_height) * self.scale_factor)
-
-        # Iterate over each height value and its index in the height profile
-        for i, height in enumerate(self.downsampled_height_profile):
-            # Calculate the x-coordinate for this height point
-            x_coord = image_left + (i * self.section.sampling_interval) * self.scale_factor
-
-            # Calculate the y-coordinate for this height point
-            y_coord = y_offset - (height - min_height) * self.scale_factor
-
-            # Append the calculated (x, y) point to the height_points list
-            height_points.append((x_coord, y_coord, i))  # Include index
-
-        # Filter height_points to only include those within the visible x bounds
-        visible_height_points = [point for point in height_points if
-                                 self.y_axis_x <= point[0] <= self.secondary_y_axis_x]
-
-        if visible_height_points:
-            max_height_point = min(visible_height_points, key=lambda point: point[1])
-            y_data_max_height = max_height_point[1]
-            self.y_max_height = y_data_max_height / self.zoom
-
-            self.y_coord_max_point = abs(((image_top - 10) / self.zoom)) + ((y_offset) - (
-                        self.downsampled_height_profile[max_height] - min_height) * self.scale_factor) / self.zoom
-
-        # Create a line using the visible height points without the index
-        self.section_canvas.create_line([(x, y) for x, y, _ in visible_height_points], fill='black',
-                                        tags='height_profile_line')
 
     def get_section_coor_from_xy(self, x, y):
         section_start = self.section.section_coor[0]  # Start point of the section
@@ -934,7 +245,7 @@ class SectionView(tk.Toplevel):
         canvas_height = self.section_canvas.winfo_height()
 
         x_pos = self.get_section_coor_from_xy(x, y)
-        adjusted_x = (x_pos * self.zoom) + self.section_canvas.coords(self.canvas_image)[0]
+        adjusted_x = (x_pos * self.section_canvas.zoom) + self.section_canvas.coords(self.section_canvas.canvas_image)[0]
 
         if for_labels:
             return adjusted_x
@@ -943,7 +254,6 @@ class SectionView(tk.Toplevel):
             self.section_canvas.delete('x_line')
 
             self.section_canvas.create_line(adjusted_x, 0, adjusted_x, canvas_height, tags='x_line')
-
 
 
     def get_y_data_from_depth(self, depth):
@@ -1005,15 +315,15 @@ class SectionView(tk.Toplevel):
         elevation = None
         if self.section.data_type == 2:
             depth = depth * 100
-        if self.topo_corrected:
+        if self.tf.topo_corrected:
             x = self.update_x_line(x, y, for_labels=True)
             indx = self.get_closest_indx_height_profile(x)
-            elevation = self.downsampled_height_profile[indx - 1] - depth / 100
+            elevation = self.section_canvas.downsampled_height_profile[indx - 1] - depth / 100
         elif 'DTMfromGPR' in self.file_name:
             depth = self.depth_from_ds
             elevation = self.elevation
 
-        self.tf.coordinates_label.update_coordinates(x, y, depth=depth, elevation=elevation)
+        self.section_canvas.coordinates_label.update_coordinates(x, y, depth=depth, elevation=elevation)
 
     def update_y_line(self, depth):
         if self.tf.draw_y_line_var.get():
@@ -1025,7 +335,7 @@ class SectionView(tk.Toplevel):
             elif 'DTMfromGPR' in self.file_name:
                 y_data = self.get_y_data_from_depth_dtm(depth)
                 y_offset = 10
-            elif self.topo_corrected:
+            elif self.tf.topo_corrected:
                 depth = depth - 5
                 y_data = self.get_y_data_from_depth(depth)
                 y_offset = 0
@@ -1035,13 +345,13 @@ class SectionView(tk.Toplevel):
                 y_offset = 10
 
 
-            if self.topo_corrected:
-                y = (y_data * self.zoom) + self.section_canvas.coords(self.canvas_image)[1]
-                self.plot_height_profile(y_data=y, use_ds=True)
+            if self.tf.topo_corrected:
+                y = (y_data * self.section_canvas.zoom) + self.section_canvas.coords(self.section_canvas.canvas_image)[1]
+                self.section_canvas.plot_height_profile(y_data=y, use_ds=True)
             else:
                 canvas_width = self.section_canvas.winfo_width()
 
-                y = (y_data * self.zoom) + self.section_canvas.coords(self.canvas_image)[1]
+                y = (y_data * self.section_canvas.zoom) + self.section_canvas.coords(self.section_canvas.canvas_image)[1]
 
                 self.section_canvas.delete('y_line')
 
@@ -1050,17 +360,17 @@ class SectionView(tk.Toplevel):
 
     def get_visible_image_bounds(self):
         # Get the position of the image on the canvas
-        img_x, img_y = self.section_canvas.coords(self.canvas_image)
+        img_x, img_y = self.section_canvas.coords(self.section_canvas.canvas_image)
 
         # Get the current size of the image displayed on the canvas
-        current_image_width = self.section_image.width()
-        current_image_height = self.section_image.height()
+        current_image_width = self.section_canvas.section_image.width()
+        current_image_height = self.section_canvas.section_image.height()
 
         # Determine the visible area bounds on the canvas
-        left_bound = self.y_axis_x
+        left_bound = self.section_canvas.y_axis_x
         top_bound = 10
-        right_bound = self.secondary_y_axis_x
-        bottom_bound = self.x_axis_y
+        right_bound = self.section_canvas.secondary_y_axis_x
+        bottom_bound = self.section_canvas.x_axis_y
 
         # Convert canvas coordinates to image coordinates
         visible_left = int(max(0, left_bound - img_x))
@@ -1074,131 +384,103 @@ class SectionView(tk.Toplevel):
 
         return visible_left, visible_top, visible_right, visible_bottom
 
-
     def save_section(self):
         file_path = filedialog.asksaveasfilename(defaultextension='.png', filetypes=[('PNG Image', '*.png')])
         if not file_path:
             return  # User cancelled the save operation
 
-        # Calculate the visible bounds in image coordinates
         visible_bounds = self.get_visible_image_bounds()
         if not visible_bounds:
             return  # No visible bounds calculated
 
         visible_left, visible_top, visible_right, visible_bottom = visible_bounds
 
-        # Check for the case where 'right' is less than 'left'
         if visible_right <= visible_left or visible_bottom <= visible_top:
             return None  # Return None to indicate there's no valid crop area
 
-        # Crop the PIL image to the visible area
         self.cropped_image = self.apply_transformations(visible_left, visible_top, visible_right, visible_bottom)
-
-        # Save the cropped image
         self.cropped_image.save(file_path, 'PNG')
 
-        self.plot_image_with_labels(file_path=file_path)
+        self.plot_image_with_labels(file_path)
 
+    def apply_transformations(self, visible_left, visible_top, visible_right, visible_bottom):
+        image_path = self.section_canvas.topo_image_path if self.tf.topo_corrected else self.section_canvas.image_path
+        pil_section_image = Image.open(image_path)
+        pil_section_image = pil_section_image.resize(
+            (self.section_canvas.section_image.width(), self.section_canvas.section_image.height()), Image.LANCZOS)
+        return pil_section_image.crop((visible_left, visible_top, visible_right, visible_bottom))
 
     def plot_image_with_labels(self, file_path):
-        # Gather data for each set of labels (currently commented out)
-        # Convert the PIL image to a NumPy array for Matplotlib to handle
         image_array = np.array(self.cropped_image)
-
         xpixels, ypixels = image_array.shape[1], image_array.shape[0]
         dpi = 300
         plt.rcParams.update({'font.size': 10})
-        figsize = ((xpixels * 3) / dpi, (ypixels * 3) / dpi)  # Adjust figsize calculation
+        figsize = ((xpixels * 3) / dpi, (ypixels * 3) / dpi)
 
-        # Create the figure and axes using figsize
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
         ax.imshow(image_array)
-        ax.set_aspect('auto')  # Adjust aspect ratio
-        ax.set_xticks([])  # Remove x-axis tick marks
-        ax.set_yticks([])  # Remove y-axis tick marks
+        ax.set_aspect('auto')
+        ax.set_xticks([])
+        ax.set_yticks([])
         ax.set_xlabel('')
         ax.set_ylabel('')
-
-        # Manually set the axes limits to exactly match the dimensions of the image
         ax.set_xlim([0, xpixels])
         ax.set_ylim([ypixels, 0])
 
-        # Gather data for each set of labels
-        x_label_data = self.get_label_data(self.x_labels)
-        y_label_data = self.get_label_data(self.y_labels)
-        secondary_y_label_data = self.get_label_data(self.secondary_y_labels)
-        additional_label_data = self.get_label_data(self.additional_labels)
+        self._plot_labels(ax, ax.twinx())
 
-        # Find the maximum number of digits in y_labels
-        max_digits = max(len(data['text']) for data in y_label_data)
-
-        # Adjusting position for depth label based on digits
-        depth_label_offset = 5  # default
-        if max_digits >= 3:
-            depth_label_offset += 5 * (max_digits - 2)  # Increase offset for each extra digit beyond 2
-
-        vals_y = []
-        labs_y = []
-        for data in y_label_data:
-            y = data['y']
-            lab = data['text']
-            vals_y.append(y)
-            labs_y.append(lab)
-
-        max_depth = max(vals_y)
-        min_depth = min(vals_y)
-        depth_ticks = np.linspace(max_depth, min_depth, num=5)
-        ax.set_yticks(np.linspace(0, max_depth - min_depth, len(depth_ticks)))
-        ax.set_yticklabels(labs_y)
-
-        ax_sec = ax.twinx()
-
-        vals_sec_y = []
-        labs_sec_y = []
-        for data in secondary_y_label_data:
-            y = data['y']
-            lab = data['text']
-            vals_sec_y.append(y)
-            labs_sec_y.append(lab)
-
-        max_depth = max(vals_sec_y)
-        min_depth = min(vals_sec_y)
-        depth_ticks = np.linspace(max_depth, min_depth, num=5)
-        ax_sec.set_yticks(np.linspace(0, max_depth - min_depth, len(depth_ticks)))
-        ax_sec.set_yticklabels(labs_sec_y)
-        ax_sec.invert_yaxis()
-
-        vals_x = []
-        labs_x = []
-
-        for data in x_label_data:
-            x = data['x']
-            lab = data['text']
-            vals_x.append(x)
-            labs_x.append(lab)
-
-        min_x = min(vals_x)
-        max_x = max(vals_x)
-        dist_ticks = np.linspace(max_x, min_x, num=5)
-        ax.set_xticks(np.linspace(0, max_x - min_x, len(dist_ticks)))
-        ax.set_xticklabels(labs_x)
-
-        # Plotting additional labels
-        for data in additional_label_data:
-            if data['tag'] == 'dist_label':
-                ax.text(data['x'] - self.y_axis_x, data['y'] - 5, data['text'], ha='center', va='top', color='black', fontweight='bold')
-            elif data['tag'] == 'depth_label':
-                ax.text(data['x'] - self.y_axis_x - depth_label_offset, data['y'] - 10, data['text'], rotation=90,
-                        ha='center', va='center', color='black', fontweight='bold')
-            elif data['tag'] == 'sec_depth_label':
-                ax.text(data['x'] - self.y_axis_x + depth_label_offset, data['y'] - 10, data['text'], rotation=90,
-                        ha='center', va='center', color='black', fontweight='bold')
-
-        plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)  # Adjust subplot padding
+        plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)
         fig.savefig(file_path, dpi=300, bbox_inches='tight')
         plt.close(fig)
-
         self.lift()
+
+    def _plot_labels(self, ax, ax_sec):
+        x_label_data = self.get_label_data(self.section_canvas.x_labels)
+        y_label_data = self.get_label_data(self.section_canvas.y_labels)
+        secondary_y_label_data = self.get_label_data(self.section_canvas.secondary_y_labels)
+        additional_label_data = self.get_label_data(self.section_canvas.additional_labels)
+
+        max_digits = max(len(data['text']) for data in y_label_data)
+        depth_label_offset = 5 + 5 * (max_digits - 2) if max_digits >= 3 else 5
+
+        self._configure_axis(ax, y_label_data, 'y')
+        self._configure_axis(ax_sec, secondary_y_label_data, 'sec_y', invert=True)
+        self._configure_axis(ax, x_label_data, 'x')
+
+        for data in additional_label_data:
+            self._plot_additional_labels(ax, data, depth_label_offset)
+
+    def _configure_axis(self, ax, label_data, axis, invert=False):
+        vals, labs = [], []
+        for data in label_data:
+            pos = data['y'] if axis in ['y', 'sec_y'] else data['x']
+            lab = data['text']
+            vals.append(pos)
+            labs.append(lab)
+
+        max_val = max(vals)
+        min_val = min(vals)
+        ticks = np.linspace(max_val, min_val, num=5)
+
+        if axis in ['y', 'sec_y']:
+            ax.set_yticks(np.linspace(0, max_val - min_val, len(ticks)))
+            ax.set_yticklabels(labs)
+            if invert:
+                ax.invert_yaxis()
+        elif axis == 'x':
+            ax.set_xticks(np.linspace(0, max_val - min_val, len(ticks)))
+            ax.set_xticklabels(labs)
+
+    def _plot_additional_labels(self, ax, data, depth_label_offset):
+        if data['tag'] == 'dist_label':
+            ax.text(data['x'] - self.section_canvas.y_axis_x, data['y'] - 5, data['text'], ha='center', va='top',
+                    color='black', fontweight='bold')
+        elif data['tag'] == 'depth_label':
+            ax.text(data['x'] - self.section_canvas.y_axis_x - depth_label_offset, data['y'] - 10, data['text'],
+                    rotation=90, ha='center', va='center', color='black', fontweight='bold')
+        elif data['tag'] == 'sec_depth_label':
+            ax.text(data['x'] - self.section_canvas.y_axis_x + depth_label_offset, data['y'] - 10, data['text'],
+                    rotation=90, ha='center', va='center', color='black', fontweight='bold')
 
     def get_label_data(self, label_ids):
         label_data = []
@@ -1207,133 +489,123 @@ class SectionView(tk.Toplevel):
             coords = self.section_canvas.coords(label_id)
             tags = self.section_canvas.gettags(label_id)
             if coords:
-                # Adjust positions if necessary, depending on the anchor and label positioning in your app
                 x_pos, y_pos = coords[0], coords[1]
                 tag = tags[0] if tags else None
                 label_data.append({'text': text, 'x': x_pos, 'y': y_pos, 'tag': tag})
 
-        if label_data[0]['tag'] == 'label_x' or label_data[0]['tag'] == 'label_y':
+        if label_data and (label_data[0]['tag'] == 'label_x' or label_data[0]['tag'] == 'label_y'):
             label_data = self.recalculate_labels(label_data)
 
         return label_data
 
     def recalculate_labels(self, data):
         axis = data[0]['tag']
+        min_pixel, max_pixel, pixel_interval = self._calculate_pixel_intervals(axis)
+        label_data_new = []
 
+        start_value, total_range, label_interval = self._calculate_label_intervals(data, min_pixel)
+
+        for i in range(5):
+            label_pos = min_pixel + i * pixel_interval
+            label_value = round(start_value + i * label_interval, 1)
+            if axis == 'label_x':
+                label_data_new.append({'text': str(label_value), 'x': label_pos, 'y': data[0]['y'], 'tag': axis})
+            elif axis == 'label_y':
+                label_data_new.append({'text': str(label_value), 'x': data[0]['x'], 'y': label_pos, 'tag': axis})
+
+        return label_data_new
+
+    def _calculate_pixel_intervals(self, axis):
         if axis == 'label_x':
-            data = [data for data in data if self.y_axis_x <= data['x'] <= self.secondary_y_axis_x]
+            min_pixel = self.section_canvas.y_axis_x
+            max_pixel = self.section_canvas.secondary_y_axis_x
         elif axis == 'label_y':
-            data = [data for data in data if 10 <= data['y'] <= self.x_axis_y]
+            min_pixel = 10
+            max_pixel = self.section_canvas.x_axis_y
 
+        total_pixel_distance = max_pixel - min_pixel
+        pixel_interval = total_pixel_distance / 4
+
+        return min_pixel, max_pixel, pixel_interval
+
+    def _calculate_label_intervals(self, data, min_pixel):
+        axis = data[0]['tag']
         lab1 = float(data[0]['text'])
         lab2 = float(data[1]['text'])
 
         if axis == 'label_x':
             lab1_pos = float(data[0]['x'])
             lab2_pos = float(data[1]['x'])
-            min_pixel = self.y_axis_x  # Starting position in pixels
-            max_pixel = self.secondary_y_axis_x  # Ending position in pixels
         elif axis == 'label_y':
             lab1_pos = float(data[0]['y'])
             lab2_pos = float(data[1]['y'])
-            min_pixel = 10     # Starting position in pixels
-            max_pixel = self.x_axis_y  # Ending position in pixels
 
         interval = lab2 - lab1
         interval_y = lab2_pos - lab1_pos
 
         pixel_per_meter = interval_y / interval
+        start_value = lab1 - (lab1_pos - min_pixel) / pixel_per_meter
+        total_range = interval * 4
+        label_interval = total_range / 4
 
-        start_value = lab1 - (lab1_pos - min_pixel) / pixel_per_meter  # Adjust this calculation based on your data setup
+        return start_value, total_range, label_interval
 
-        num_labels = 5  # Total number of labels to display
+    def update_depthslice_canvas(self, x, y):
+        x_coor, y_coor = self.get_xy_from_section_coor(x)
 
-        # Calculate the distance between each label in pixels
-        total_pixel_distance = max_pixel - min_pixel
-        pixel_interval = total_pixel_distance / (num_labels - 1)
+        if 'DTMfromGPR' in self.file_name:
+            depth = self.get_depth_from_y_data_dtm(y)
+        elif self.section.data_type == 2:
+            if self.tf.topo_corrected:
+                depth = (self.get_depth_from_y_data(self.section_canvas.y_coord_max_point) - 5) / 100
+            else:
+                depth = self.get_depth_from_y_data_ft(y)
 
-        # Calculate new label interval and total range to cover
-        total_range = interval * (num_labels - 1)
-        label_interval = total_range / (num_labels - 1)
-
-        label_data_new = []
-
-        if axis == 'label_x':
-            y = data[0]['y']
-            tag = 'label_x'
-            for i in range(num_labels):
-                label_pos = min_pixel + i * pixel_interval
-                label_value = round(start_value + i * label_interval, 1)  # Increment by 0.5 meters each time
-
-                label_data_new.append({
-                    'text': str(label_value),
-                    'x': label_pos,
-                    'y': y,
-                    'tag': tag
-                })
-        elif axis == 'label_y':
-            x = data[0]['x']
-            tag = 'label_y'
-            for i in range(num_labels):
-                label_pos = min_pixel + i * pixel_interval
-                label_value = round(start_value + i * label_interval, 1)  # Increment by 0.5 meters each time
-
-                label_data_new.append({
-                    'text': str(label_value),
-                    'x': x,
-                    'y': label_pos,
-                    'tag': tag
-                })
-
-        return label_data_new
-
-
-    def apply_transformations(self, visible_left, visible_top, visible_right, visible_bottom):
-        # Example of applying transformations and updating the PIL and PhotoImage
-        if self.topo_corrected:
-            self.pil_section_image = Image.open(self.topo_image_path)
+        elif self.tf.topo_corrected:
+            depth = self.get_depth_from_y_data(self.section_canvas.y_coord_max_point) - 5
         else:
-            self.pil_section_image = Image.open(self.image_path)
+            depth = self.get_depth_from_y_data(y)
 
-        width = self.section_image.width()
-        height = self.section_image.height()
+        self.frame_image.section_coor(x_coor, y_coor)
+        self.frame_left.update_image_selection(depth)
 
-        self.pil_section_image = self.pil_section_image.resize((width, height), Image.LANCZOS)
+        elevation = None
+        if self.section.data_type == 2:
+            depth = depth*100
+        if self.tf.topo_corrected:
+            elevation = self.section_canvas.height - depth/100
+        if 'DTMfromGPR' in self.file_name:
+            elevation = depth / 100
+            depth = self.depth_from_ds
 
-        self.pil_section_image = self.pil_section_image.crop((visible_left, visible_top, visible_right, visible_bottom))  # Any transformation
-        return self.pil_section_image
+        self.frame_image.coordinates_label.update_coordinates(x_coor, y_coor)
+        self.section_canvas.coordinates_label.update_coordinates(x_coor, y_coor, depth=depth, elevation=elevation)
+
+    def get_xy_from_section_coor(self, x):
+        section_start = self.section.section_coor[0]  # Start point of the section
+        section_stop = self.section.section_coor[1]  # Stop point of the section
+        x /= round(self.section.section_data.shape[1]/self.section.dist)
+        # Calculate the total distance along the section
+        section_distance = ((section_stop[0] - section_start[0]) ** 2 + (
+                    section_stop[1] - section_start[1]) ** 2) ** 0.5
+
+        # Calculate the ratio of the given x_data relative to the total distance
+        ratio = x / section_distance
+
+        # Interpolate the x and y coordinates along the section
+        x = round(section_start[0] + (section_stop[0] - section_start[0]) * ratio, 3)
+        y = round(section_start[1] + (section_stop[1] - section_start[1]) * ratio, 3)
+
+        return x, y
+
+    def get_depth_from_y_data(self, y_data):
+        num_rows = len(self.section.section_data)
+        depth_range = self.section.depth_m
+        depth_value = int((y_data / num_rows) * depth_range * 100)  # Multiply by 100 to convert to centimeters
+        depth_value = round(depth_value / (self.section.pixelsize_z * 100)) * (self.section.pixelsize_z * 100)   # Round to the nearest 5 cm step
+        return depth_value
 
 
-    def add_topography(self):
-        self.clear_topography()
-        if len(self.section.dtm_files) == 1:
-            dtm_data = next(iter(self.section.dtm_files.values()))
-            self.topo_corr_data, self.downsampled_height_profile, self.height_profile, topo_image_path = self.section.perform_topographic_correction(dtm_data, self.temp_folder_path, self.vmin, self.vmax)
-            self.display_section(topo_image_path, top_corr=True)
-        elif len(self.section.dtm_files) > 1:
-            dtm_selector = DTMFileSelector(self, self.section.dtm_files)
-            selected_files = dtm_selector.get_selected_dtm_files()
-            if selected_files:
-                self.topo_corr_data, self.downsampled_height_profile, self.height_profile, topo_image_path = self.section.perform_topographic_correction(
-                    selected_files[0], self.temp_folder_path, self.vmin, self.vmax)
-                self.display_section(topo_image_path, top_corr=True)
-        else:
-            messagebox.showinfo("No DTM File", "No DTM file available for topographic correction.")
-
-        self.adjust_window_size()
-        self.lift()
-        self.init_image_position = (0, 0)
-
-    def clear_topography(self):
-        self.display_section(self.image_path, top_corr=False, clear_topo=True)
-        self.display_section(self.image_path, top_corr=False, clear_topo=True)
-        self.init_image_position = (0, 0)
-
-
-class FakeEvent:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
 
 
 

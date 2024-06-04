@@ -1,45 +1,26 @@
 import tkinter as tk
-from tkinter import Frame, Canvas
-from PIL import Image, ImageTk
+from tkinter import Frame, messagebox
 
 from config_manager import ConfigurationManager
-from GUI.CoordinatesLabel import CoordinatesLabel
 
 
 class TopFrameTools(Frame):
-    def __init__(self, parent, section, section_coor, dist, file_name, data_type, depth_m, pixelsize_z, frame_image, frame_left, *args, **kwargs):  # Corrected __int__ to __init__
+    def __init__(self, parent, section, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
 
         self.config_manager = ConfigurationManager('config.ini')
         self.vmin = int(self.config_manager.get_option('Greyscale', 'vmin'))
         self.vmax = int(self.config_manager.get_option('Greyscale', 'vmax'))
 
-        self.section_view = None
+        self.section_window = None
         self.section_canvas = None
-        self.canvas_image = None
-        self.section_image = None
-        self.x_axis_y = None
-        self.y_axis_x = None
-        self.secondary_y_axis_x = None
-        self.zoom = None
-        self.topo_corrected = None
-        self.image = None
-        self.init_image_position = (0, 0)
-        self.section_coor = section_coor
+
         self.section = section
-        self.dist = dist
-        self.file_name = file_name
-        self.data_type = data_type
-        self.depth_m = depth_m
-        self.pixelsize_z = pixelsize_z
-        self.frame_image = frame_image
-        self.frame_left = frame_left
-        self.coordinates_label = None
+        self.topo_corrected = False
 
         self.create_widgets()
         self.create_zoom_controls()
 
-        self.frame_left.set_top_frame_tools(self)
 
     def create_widgets(self):
         # Add buttons or other widgets as needed
@@ -98,153 +79,74 @@ class TopFrameTools(Frame):
         vmax_entry.bind('<Return>', self.update_vmin_vmax)
 
     def create_zoom_controls(self):
-        zoom_in_button = tk.Button(self, text="+", command=lambda: self.section_view.zoom_section('in'))
+        zoom_in_button = tk.Button(self, text="+", command=lambda: self.section_canvas.zoom_section('in'))
         zoom_in_button.pack(side="left", padx=5, pady=5)
-        zoom_out_button = tk.Button(self, text="-", command=lambda: self.section_view.zoom_section('out'))
+        zoom_out_button = tk.Button(self, text="-", command=lambda: self.section_canvas.zoom_section('out'))
         zoom_out_button.pack(side="left", padx=5, pady=5)
 
     def set_zoom_controls(self):
         # Bind right-click drag for panning
-        self.section_canvas.bind("<Button-3>", self.section_view.start_pan)
-        self.section_canvas.bind("<B3-Motion>", self.section_view.pan_image)
+        self.section_canvas.bind("<Button-3>", self.section_canvas.start_pan)
+        self.section_canvas.bind("<B3-Motion>", self.section_canvas.pan_image)
 
-    def set_coordinates_label(self):
-        self.coordinates_label = CoordinatesLabel(self.section_canvas)
 
-    # Placeholder methods for functionality
     def save_section(self):
-        pass
+        self.section_window.save_section()
 
     def add_topography(self):
-        self.section_view.add_topography()
+        self.section_canvas.add_topography()
 
     def clear_topography(self):
-        pass
+        self.section_canvas.clear_topography()
 
     def adjust_vmin(self, adjustment):
-        pass
+        new_vmin = self.vmin + adjustment
+        if new_vmin < self.vmax:
+            self.vmin = new_vmin
+            self.vmin_var.set(int(self.vmin))
+            self.section_canvas.regenerate_and_refresh_image()
+        else:
+            self.show_error_message("Invalid Adjustment", "vmin cannot be equal or greater than vmax.")
 
     def adjust_vmax(self, adjustment):
-        pass
+        new_vmax = self.vmax + adjustment
+        if new_vmax > self.vmin:
+            self.vmax = new_vmax
+            self.vmax_var.set(int(self.vmax))
+            self.section_canvas.regenerate_and_refresh_image()
+        else:
+            self.show_error_message("Invalid Adjustment", "vmax cannot be equal or less than vmin.")
 
-    def update_vmin_vmax(self, event):
-        pass
+    def update_vmin_vmax(self, event=None):
+        try:
+            vmin = int(self.vmin_var.get())
+            vmax = int(self.vmax_var.get())
+
+            if vmin < vmax:
+                self.vmin = vmin
+                self.vmax = vmax
+                self.section_canvas.regenerate_and_refresh_image()
+            else:
+                self.show_error_message("Invalid Input", "Ensure that vmin is less than vmax.")
+        except ValueError:
+            self.show_error_message("Invalid Input", "Please enter numeric values for vmin and vmax.")
 
     def reset_to_default_greyscale(self):
-        pass
+        # Retrieve vmin and vmax values from the configuration file
+        default_vmin = int(self.config_manager.get_option('Greyscale', 'vmin'))
+        default_vmax = int(self.config_manager.get_option('Greyscale', 'vmax'))
 
-    def draw_lines(self, event):
-        x, y = event.x, event.y
+        # Update the entry widgets with default values
+        self.vmin_var.set(default_vmin)
+        self.vmax_var.set(default_vmax)
 
-        # Get the current image position on the canvas
-        current_image_pos = self.section_canvas.coords(self.canvas_image)
-        image_left, image_top = current_image_pos[0], current_image_pos[1]
+        self.update_vmin_vmax()
 
-        if x <= self.y_axis_x:
-            x = self.y_axis_x
-        elif x >= self.secondary_y_axis_x:
-            x = self.secondary_y_axis_x
+    def show_error_message(self, title, message):
+        messagebox.showerror(title, message)
+        self.focus_set()  # Set the focus back to the SectionView window
+        self.lift()  # Bring the SectionView window to the front
 
-        if y <= 10:
-            y = 10
-        elif y >= self.x_axis_y:
-            y = self.x_axis_y
-
-        x_data = (x - image_left) / self.zoom
-        y_data = (y - image_top) / self.zoom
-
-        # Ensure the calculations do not go beyond the image dimensions
-        x_data = max(0, min(self.section_image.width() / self.zoom, x_data))
-        y_data = max(0, min(self.section_image.height() / self.zoom, y_data))
-
-        # Bounds for drawing the lines based on the visible part of the image
-        image_right = image_left + self.section_image.width()# * self.zoom
-        image_bottom = image_top + self.section_image.height()# * self.zoom
-
-        # Check if the cursor is within the visible part of the image
-        if image_left <= x <= image_right and image_top <= y <= image_bottom:
-            # Clear any previously drawn lines
-            self.section_canvas.delete('x_line')
-            self.section_canvas.delete('y_line')
-            self.section_canvas.delete('height_profile_line')
-
-            # Draw vertical line
-            if self.draw_x_line_var.get():
-                self.section_canvas.create_line(x, max(image_top, 0), x,
-                                                min(image_bottom, self.section_canvas.winfo_height()), tags='x_line')
-
-            # Draw horizontal line or plot height profile
-            if self.draw_y_line_var.get():
-                if self.topo_corrected:
-                    self.section_view.plot_height_profile(y, x)
-                else:
-                    self.section_canvas.create_line(max(image_left, 0), y,
-                                                    min(image_right, self.section_canvas.winfo_width()), y,
-                                                    tags='y_line')
-
-            if self.communication_var.get():
-                self.update_depthslice_canvas(x_data, y_data)
-
-        else:
-            # Cursor is outside the image bounds, remove any previously drawn lines
-            self.section_canvas.delete('x_line')
-            self.section_canvas.delete('y_line')
-            self.section_canvas.delete('height_profile_line')
-
-    def update_depthslice_canvas(self, x, y):
-        x_coor, y_coor = self.get_xy_from_section_coor(x)
-
-        if 'DTMfromGPR' in self.file_name:
-            depth = self.get_depth_from_y_data_dtm(y)
-        elif self.data_type == 2:
-            if self.topo_corrected:
-                depth = (self.get_depth_from_y_data(self.y_coord_max_point) - 5) / 100
-            else:
-                depth = self.get_depth_from_y_data_ft(y)
-
-        elif self.topo_corrected:
-            depth = self.get_depth_from_y_data(self.section_view.y_coord_max_point) - 5
-        else:
-            depth = self.get_depth_from_y_data(y)
-
-        self.frame_image.section_coor(x_coor, y_coor)
-        self.frame_left.update_image_selection(depth)
-
-        elevation = None
-        if self.data_type == 2:
-            depth = depth*100
-        if self.topo_corrected:
-            elevation = self.section_view.height - depth/100
-        if 'DTMfromGPR' in self.file_name:
-            elevation = depth / 100
-            depth = self.depth_from_ds
-
-        self.frame_image.coordinates_label.update_coordinates(x_coor, y_coor)
-        self.coordinates_label.update_coordinates(x_coor, y_coor, depth=depth, elevation=elevation)
-
-    def get_xy_from_section_coor(self, x):
-        section_start = self.section_coor[0]  # Start point of the section
-        section_stop = self.section_coor[1]  # Stop point of the section
-        x /= round(self.section.shape[1]/self.dist)
-        # Calculate the total distance along the section
-        section_distance = ((section_stop[0] - section_start[0]) ** 2 + (
-                    section_stop[1] - section_start[1]) ** 2) ** 0.5
-
-        # Calculate the ratio of the given x_data relative to the total distance
-        ratio = x / section_distance
-
-        # Interpolate the x and y coordinates along the section
-        x = round(section_start[0] + (section_stop[0] - section_start[0]) * ratio, 3)
-        y = round(section_start[1] + (section_stop[1] - section_start[1]) * ratio, 3)
-
-        return x, y
-
-    def get_depth_from_y_data(self, y_data):
-        num_rows = len(self.section)
-        depth_range = self.depth_m
-        depth_value = int((y_data / num_rows) * depth_range * 100)  # Multiply by 100 to convert to centimeters
-        depth_value = round(depth_value / (self.pixelsize_z * 100)) * (self.pixelsize_z * 100)   # Round to the nearest 5 cm step
-        return depth_value
 
 
 
