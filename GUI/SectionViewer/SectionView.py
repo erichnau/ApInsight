@@ -70,6 +70,7 @@ class SectionView(tk.Toplevel):
     def _set_section_window(self):
         self.section_canvas.section_window = self
         self.section_canvas.tf = self.tf
+        self.section_canvas.frame_left = self.frame_left
 
 
     def _set_canvas_variables(self):
@@ -265,13 +266,13 @@ class SectionView(tk.Toplevel):
 
     def get_y_data_from_depth_dtm(self, depth):
         num_rows = len(self.section.section_data)
-        depth_range = self.max_depth_new - self.min_depth_new
+        depth_range = self.section_canvas.max_depth_new - self.section_canvas.min_depth_new
 
         # Constrain the depth value within the range of max_depth_new and min_depth_new
-        constrained_depth = min(max(depth, self.min_depth_new), self.max_depth_new)
+        constrained_depth = min(max(depth, self.section_canvas.min_depth_new), self.section_canvas.max_depth_new)
 
         # Calculate the relative position based on the constrained depth
-        relative_depth_position = (self.max_depth_new - constrained_depth) / depth_range
+        relative_depth_position = (self.section_canvas.max_depth_new - constrained_depth) / depth_range
 
         # Calculate the y-coordinate in the section image
         y_data = relative_depth_position * num_rows
@@ -280,13 +281,13 @@ class SectionView(tk.Toplevel):
 
     def get_depth_from_y_data_dtm(self, y_data):
         num_rows = len(self.section.section_data)
-        depth_range = self.max_depth_new - self.min_depth_new
+        depth_range = self.section_canvas.max_depth_new - self.section_canvas.min_depth_new
 
         # Calculate the relative position of y_data in the section
         relative_y_position = y_data / num_rows
 
         # Calculate the depth value based on the relative position
-        depth_value = self.max_depth_new - (relative_y_position * depth_range)
+        depth_value = self.section_canvas.max_depth_new - (relative_y_position * depth_range)
 
         depth_value_rounded = round(depth_value*100 / int(self.section.pixelsize_z*100)) * int(self.section.pixelsize_z*100)
 

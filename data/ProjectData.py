@@ -11,6 +11,8 @@ from GPR_func import read_fld
 from config_manager import ConfigurationManager
 
 from GPR_func._2D_vertical import filter_nan_and_zero_rows
+from GUI._3DViewer import _3DViewer
+
 
 class ProjectData:
     def __init__(self, frame_right):
@@ -111,14 +113,11 @@ class DTMData:
             self.transform = dataset.transform
 
     def create_height_profile(self, coordinates, samples):
-        #sigma value for gaussian smoothing
-        sigma = 10
-
         height_profile = self.extract_height_profile(coordinates)
         resampled_height_profile = self.resample_height_profile(height_profile, samples)
-        smoothed_height_profile = self.smooth_height_profile(resampled_height_profile, sigma)
+        smoothed_height_profile = self.smooth_height_profile(resampled_height_profile)
 
-        return resampled_height_profile
+        return smoothed_height_profile
 
     def extract_height_profile(self, coordinates):
         start_coordinates = coordinates[0]
@@ -127,6 +126,10 @@ class DTMData:
         # Calculate the number of points based on the sampling interval
         num_points = int(
             np.ceil(np.linalg.norm(np.array(stop_coordinates) - np.array(start_coordinates)) / self.resolution)) + 1
+
+        # Increase the number of points for lower resolution DTMs
+        if self.resolution > 0.5:  # Threshold of 50 cm
+            num_points *= int(self.resolution / 0.1)  # Scale up points based on resolution
 
         # Generate the step size for the distance array
         step = np.linalg.norm(np.array(stop_coordinates) - np.array(start_coordinates)) / (num_points - 1)
@@ -169,7 +172,13 @@ class DTMData:
 
         return resampled_profile
 
-    def smooth_height_profile(self, height_profile, sigma):
+    def smooth_height_profile(self, height_profile):
+        # Adjust sigma based on the resolution
+        if self.resolution > 0.5:  # Threshold of 50 cm
+            sigma = 10 * (self.resolution / 0.1)
+        else:
+            sigma = 10
+
         smoothed_profile = gaussian_filter(height_profile, sigma)
 
         return smoothed_profile
@@ -219,6 +228,7 @@ class FldData:
             top_removed = np.argmax(layers_to_keep)
             self.bottom_zeros = fld_dset.shape[0] - (len(layers_to_keep) - np.argmax(layers_to_keep[::-1])) - top_removed
 
+
     def extract_file_name(self, file_path):
         return os.path.basename(file_path)
 
@@ -258,6 +268,74 @@ class FldData:
             depth_m = self.depth_table[valid_section_data.shape[0]-1][0] + self.depth_table[valid_section_data.shape[0]-1][1]
 
         return dist, valid_section_data, depth_m, self.pixelsize_z, self.data_type, top_removed, bottom_removed, self.depth_table
+
+    def create_3d_subset(self, coordinates):
+        # Retrieve the corner points of the rectangle from self.rectangle_data
+        start_coords = coordinates["start_coords"]
+        perp_start_coords = coordinates["perp_start_coords"]
+        perp_stop_coords = coordinates["perp_stop_coords"]
+        stop_coords = coordinates["stop_coords"]
+
+        # Convert coordinates to pixel indices or array indices depending on your data structure
+        # Determine the bounding box of the rectangle
+        min_x = min(start_coords[0], perp_start_coords[0], perp_stop_coords[0], stop_coords[0])
+        max_x = max(start_coords[0], perp_start_coords[0], perp_stop_coords[0], stop_coords[0])
+        min_y = min(start_coords[1], perp_start_coords[1], perp_stop_coords[1], stop_coords[1])
+        max_y = max(start_coords[1], perp_start_coords[1], perp_stop_coords[1], stop_coords[1])
+
+        # Convert spatial coordinates to pixel indices
+        min_x_index = int((min_x - self.x_coor) / self.pixelsize)
+        max_x_index = int((max_x - self.x_coor) / self.pixelsize)
+        max_y_index = int(((self.y_coor + self.ypixels*self.pixelsize) - min_y) / self.pixelsize)
+        min_y_index = int(((self.y_coor + self.ypixels*self.pixelsize) - max_y) / self.pixelsize)
+
+        # Slice the dataset
+        subset_data = self.fld_dset[:, min_y_index:max_y_index + 1, min_x_index:max_x_index + 1]
+        print(self.fld_dset.coords['x'].values, self.fld_dset.coords['y'].values)
+        subset_clean = self.clean_subset(subset=subset_data, coordinates=coordinates, x_coords=subset_data.coords['x'].values, y_coords=subset_data.coords['y'].values)
+
+        return subset_clean
+
+    def is_point_in_rectangle(self, point, vertices):
+        """Check if a point is inside the rectangle using the ray-casting algorithm."""
+        x, y = point
+        n = len(vertices)
+        inside = False
+
+        p1x, p1y = vertices[0]
+        for i in range(n + 1):
+            p2x, p2y = vertices[i % n]
+            if y > min(p1y, p2y):
+                if y <= max(p1y, p2y):
+                    if x <= max(p1x, p2x):
+                        if p1y != p2y:
+                            xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                        if p1x == p2x or x <= xinters:
+                            inside = not inside
+            p1x, p1y = p2x, p2y
+
+        return inside
+
+    def clean_subset(self, subset, coordinates, x_coords, y_coords, nan_value=np.nan):
+        """Set values outside the arbitrary rectangle to NaNs."""
+        start_coords = coordinates["start_coords"]
+        perp_start_coords = coordinates["perp_start_coords"]
+        perp_stop_coords = coordinates["perp_stop_coords"]
+        stop_coords = coordinates["stop_coords"]
+
+        # Define the rectangle vertices
+        vertices = [start_coords, perp_start_coords, perp_stop_coords, stop_coords]
+
+        # Make a writable copy of the subset
+        subset_copy = subset.copy()
+
+        # Iterate over the subset and set values outside the rectangle to nan_value
+        for i in range(subset_copy.shape[1]):  # y dimension
+            for j in range(subset_copy.shape[2]):  # x dimension
+                if not self.is_point_in_rectangle((x_coords[j], y_coords[i]), vertices):
+                    subset_copy[:, i, j] = nan_value
+
+        return subset_copy
 
     def calc_index_from_coor(self, x, y):
         # Calculate the indices as before

@@ -301,7 +301,7 @@ class LeftFrame(Frame):
         if event:
             selected_file = self.handle_image_selection(event)
 
-        if self.section_view_active and self.frame_right.communication_var.get():
+        if self.section_view_active and self.frame_right.communication_var.get() and self.section_view_window.section_canvas.is_cursor_on_image() == False:
             if self.frame_right.draw_y_line_var.get():
                 if self.data_type == 2:
                     depth_start, depth_end = self.image_dict.get(selected_file, (None, None))

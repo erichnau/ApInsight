@@ -22,6 +22,7 @@ class SectionCanvas(tk.Canvas):
         self.init_image_position = (0, 0)
         self.section_window = None
         self.tf = None
+        self.frame_left = None
 
         self.pan_offset_x = 0
         self.pan_offset_y = 0
@@ -707,6 +708,21 @@ class SectionCanvas(tk.Canvas):
 
         for label in self.additional_labels:
             self.tag_raise(label)
+
+    def is_cursor_on_image(self):
+        """
+        Check if the cursor is on the image canvas.
+        """
+        mouse_x, mouse_y = self.winfo_pointerxy()
+        canvas_x = self.canvasx(mouse_x - self.winfo_rootx())
+        canvas_y = self.canvasy(mouse_y - self.winfo_rooty())
+
+        current_image_pos = self.coords(self.canvas_image)
+        image_left, image_top = current_image_pos[0], current_image_pos[1]
+        image_right = image_left + self.section_image.width()
+        image_bottom = image_top + self.section_image.height()
+
+        return image_left <= canvas_x <= image_right and image_top <= canvas_y <= image_bottom
 
 
 class FakeEvent:
