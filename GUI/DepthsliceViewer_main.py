@@ -238,6 +238,7 @@ class MenuBuilder:
             self.top_frame.zoom_button.config(state='normal')
             self.top_frame.draw_section_button.config(state='normal')
             self.top_frame.measure_tool.config(state='normal')
+            self.top_frame.draw_rectangle_button.config(state='normal')
             self.top_frame.disable_draw_mode()
             self.frame_right.update_project(self.json_file)
 
@@ -407,6 +408,7 @@ class TopFrame(Frame):
 
         self.measure_mode = False
         self.mw = None
+        self.rectangle_mode = False
 
         self.section_view = None
         self.section_view_active = False
@@ -420,6 +422,9 @@ class TopFrame(Frame):
 
         self.draw_section_button = tk.Button(self, text="Draw Section", command=self.enable_draw_mode, state='disabled')
         self.draw_section_button.pack(side='left', padx=5, pady=5)
+
+        self.draw_rectangle_button = tk.Button(self, text='Draw Rectangle', command=self.toggle_rectangle_mode, state='disabled')
+        self.draw_rectangle_button.pack(side='left', padx=5, pady=5)
 
         self.measure_tool = tk.Button(self, text="Measure Tool", command=self.measure, state='disabled')
         self.measure_tool.pack(side='left', padx=5, pady=5)
@@ -442,6 +447,7 @@ class TopFrame(Frame):
 
     def enable_draw_mode(self):
         self.measure_tool.config(relief='raised')
+        self.draw_rectangle_button.config(relief='raised')
         if self.mw is not None:
             self.mw.on_window_close()
             self.measure_mode = False
@@ -465,9 +471,47 @@ class TopFrame(Frame):
             self.draw_section_button.config(relief="sunken")
             self.frame_image.draw_section_mode = True
 
+
     def disable_draw_mode(self):
         self.draw_section_button.config(relief="raised")
         self.frame_image.draw_section_mode = False
+
+
+    def toggle_rectangle_mode(self):
+        if self.frame_image.draw_rectangle_mode:
+            self.disable_rectangle_mode()
+        else:
+            self.enable_rectangle_mode()
+
+
+    def enable_rectangle_mode(self):
+        self.measure_tool.config(relief='raised')
+        self.draw_section_button.config(relief='raised')
+        self.disable_draw_mode()
+        if self.mw is not None:
+            self.mw.on_window_close()
+            self.measure_mode = False
+
+        if self.frame_image.draw_section_mode:
+            self.frame_image.bindings()
+            self.draw_section_button.config(relief="raised")
+            self.frame_image.draw_section_mode = False
+
+        # Add logic to enable rectangle mode
+        self.frame_image.draw_rectangle_mode = True
+        # Implement whatever logic is necessary to enable rectangle drawing mode
+
+        self.frame_image.set_draw_rectangle_mode()
+        self.draw_rectangle_button.config(relief="sunken")
+
+
+    def disable_rectangle_mode(self):
+        # Add logic to disable rectangle mode
+        self.frame_image.draw_rectangle_mode = False
+        # Implement whatever logic is necessary to disable rectangle drawing mode
+        self.draw_section_button.config(relief='raised')
+        self.draw_rectangle_button.config(relief="raised")
+
 
     def measure(self):
         if self.measure_mode is True:
@@ -476,6 +520,7 @@ class TopFrame(Frame):
             self.measure_mode = False
         else:
             self.disable_draw_mode()
+            self.disable_rectangle_mode()
             self.mw = MeasurementWindow(self.frame_image, self)
             self.measure_tool.config(relief='sunken')
             self.measure_mode = True

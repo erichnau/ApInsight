@@ -29,6 +29,7 @@ class ImageFrame(Frame):
 
         self.active_section = None
         self.draw_section_mode = False
+        self.draw_rectangle_mode = False
         self.section_drawn = False
         self.section_view_active = False
         self.marker_drawn = False
@@ -82,6 +83,26 @@ class ImageFrame(Frame):
         self.canvas.bind('<B1-Motion>', self.draw_section)
         self.canvas.bind('<ButtonRelease-1>', self.finish_section)
         self.canvas.bind("<Motion>", self.print_canvas_coordinates)
+
+    def set_draw_rectangle_mode(self):
+        # Unbind the previous bindings
+        self.canvas.unbind('<ButtonPress-1>')
+        self.canvas.unbind('<B1-Motion>')
+        self.canvas.unbind('<ButtonRelease-1>')
+        self.canvas.unbind("<Motion>")
+
+        # Bind the new bindings for drawing rectangles
+        self.canvas.bind('<ButtonPress-1>', self.start_rectangle)
+        self.canvas.bind('<B1-Motion>', self.draw_baseline)
+        self.canvas.bind("<Motion>", self.print_canvas_coordinates)
+
+
+    def finalize_rectangle_mode(self):
+        self.canvas.unbind('<ButtonPress-1>')
+        self.canvas.unbind('<ButtonRelease-1>')
+
+        self.canvas.bind('<Motion>', self.draw_rectangle)
+        self.canvas.bind('<ButtonPress-1>', self.finish_rectangle)
 
     def set_marker_mode(self):
         self.canvas.tag_bind(self.marker, '<Button-3>', self.select_section_marker)
@@ -260,6 +281,164 @@ class ImageFrame(Frame):
             self.update_canvas_objects()
 
             self.send_section_to_right_frame((round(self.global_start_p_x, 2), round(self.global_start_p_y, 2)), (round(self.global_stop_x,2), round(self.global_stop_y, 2)))
+
+    def start_rectangle(self, event):
+        if self.draw_rectangle_mode:
+            # Create a point at the clicked position
+            self.canvas.delete("start_p")
+            self.canvas.delete("rectangle")
+            self.canvas.delete("baseline")
+
+            canvas_x = self.canvas.canvasx(event.x)
+            canvas_y = self.canvas.canvasy(event.y)
+
+            self.canvas.create_oval(canvas_x, canvas_y, canvas_x, canvas_y, tags='start_p', outline='red', width=5)
+
+            # Store the starting position of the rectangle
+            self.start_x = canvas_x
+            self.start_y = canvas_y
+        else:
+            # Reset the starting position if not in rectangle drawing mode
+            self.start_x = None
+            self.start_y = None
+
+        self.canvas.bind('<ButtonRelease-1>', self.finish_baseline)
+
+    def draw_baseline(self, event):
+        if self.draw_rectangle_mode:
+            # Delete the previous baseline (if any)
+            self.canvas.delete("baseline")
+
+            canvas_x = self.canvas.canvasx(event.x)
+            canvas_y = self.canvas.canvasy(event.y)
+
+            # Draw the baseline from the starting position to the current mouse position
+            self.canvas.create_line(self.start_x, self.start_y, canvas_x, canvas_y, tags="baseline", fill='red')
+
+    def finish_baseline(self, event):
+        if self.draw_rectangle_mode:
+            # Unbind the baseline drawing event
+            self.canvas.unbind('<B1-Release>')
+
+            # Delete the previous baseline (if any)
+            self.canvas.delete("baseline")
+
+            # Draw the final baseline
+            canvas_x = self.canvas.canvasx(event.x)
+            canvas_y = self.canvas.canvasy(event.y)
+            self.stop_x = canvas_x
+            self.stop_y = canvas_y
+
+            self.canvas.create_line(self.start_x, self.start_y, canvas_x, canvas_y, tags="baseline", fill='red')
+
+            # Calculate the baseline length
+            self.baseline_length = math.sqrt((self.stop_x - self.start_x) ** 2 + (self.stop_y - self.start_y) ** 2)
+
+
+            self.finalize_rectangle_mode()
+
+
+    def calculate_perpendicular_lines(self, canvas_x, canvas_y):
+        # Check if the baseline length is zero
+        if self.baseline_length == 0:
+            return None, None, None, None
+
+        # Calculate the baseline vector
+        baseline_vector = [self.stop_x - self.start_x, self.stop_y - self.start_y]
+
+        # Calculate the vector from the start point to the current mouse cursor
+        mouse_vector = [canvas_x - self.start_x, canvas_y - self.start_y]
+
+        # Calculate the cross product between the baseline vector and the mouse vector
+        cross_product = baseline_vector[0] * mouse_vector[1] - baseline_vector[1] * mouse_vector[0]
+
+        # Determine the direction (left or right) based on the sign of the cross product
+        if cross_product > 0:
+            # The mouse cursor is to the right of the baseline, so draw the perpendicular lines to the left
+            factor = -1
+        else:
+            # The mouse cursor is to the left of the baseline, so draw the perpendicular lines to the right
+            factor = 1
+
+        # Calculate perpendicular distances from the mouse position to the baseline
+        perp_dist_start = abs(
+            (canvas_x - self.start_x) * (self.start_y - self.stop_y) - (self.start_x - self.stop_x) * (
+                    canvas_y - self.start_y)) / self.baseline_length
+
+        perp_dist_stop = abs(
+            (canvas_x - self.stop_x) * (self.start_y - self.stop_y) - (self.start_x - self.stop_x) * (
+                    canvas_y - self.stop_y)) / self.baseline_length
+
+        # Calculate the coordinates of the perpendicular lines
+        perp_x_start = self.start_x + factor * perp_dist_start * (self.stop_y - self.start_y) / self.baseline_length
+        perp_y_start = self.start_y - factor * perp_dist_start * (self.stop_x - self.start_x) / self.baseline_length
+        perp_x_stop = self.stop_x + factor * perp_dist_stop * (self.stop_y - self.start_y) / self.baseline_length
+        perp_y_stop = self.stop_y - factor * perp_dist_stop * (self.stop_x - self.start_x) / self.baseline_length
+
+        return perp_x_start, perp_y_start, perp_x_stop, perp_y_stop
+
+    def draw_rectangle(self, event):
+        if self.draw_rectangle_mode:
+            # Delete the previous rectangle (if any)
+            self.canvas.delete("rectangle")
+
+            canvas_x = self.canvas.canvasx(event.x)
+            canvas_y = self.canvas.canvasy(event.y)
+
+            # Calculate the perpendicular lines
+            self.perp_x_start, self.perp_y_start, self.perp_x_stop, self.perp_y_stop = self.calculate_perpendicular_lines(canvas_x,
+                                                                                                      canvas_y)
+
+            # Draw the rectangle based on the baseline and the perpendicular lines
+            if self.perp_x_start is not None:
+                self.canvas.create_line(self.start_x, self.start_y, self.perp_x_start, self.perp_y_start, tags="rectangle",
+                                        fill='red')
+                self.canvas.create_line(self.perp_x_start, self.perp_y_start, self.perp_x_stop, self.perp_y_stop, tags="rectangle",
+                                        fill='red')
+                self.canvas.create_line(self.perp_x_stop, self.perp_y_stop, self.stop_x, self.stop_y, tags="rectangle",
+                                        fill='red')
+
+    def finish_rectangle(self, event):
+        self.canvas.delete("rectangle", 'baseline', 'start_p')
+
+        self.canvas.unbind('<Motion>')
+        self.canvas.unbind('<B1-Motion')
+        self.canvas.unbind('<B1-Release>')
+        if self.draw_rectangle_mode:
+            # Draw the final rectangle
+            if self.perp_x_start is not None:
+                #Draw corner points
+                self.canvas.create_oval(self.start_x, self.start_y, self.start_x, self.start_y, tags='start_p', outline='red', width=5)
+                self.canvas.create_oval(self.stop_x, self.stop_y, self.stop_x, self.stop_y, tags='start_p', outline='red', width=5)
+                self.canvas.create_oval(self.perp_x_start, self.perp_y_start, self.perp_x_start, self.perp_y_start, tags='start_p', outline='red', width=5)
+                self.canvas.create_oval(self.perp_x_stop, self.perp_y_stop, self.perp_x_stop, self.perp_y_stop, tags='start_p', outline='red', width=5)
+
+                # Draw lines connecting the four corner points
+                self.canvas.create_line(self.start_x, self.start_y,
+                                        self.perp_x_start, self.perp_y_start,
+                                        fill='red', tags="rectangle")
+                self.canvas.create_line(self.perp_x_start, self.perp_y_start,
+                                        self.perp_x_stop, self.perp_y_stop,
+                                        fill='red', tags="rectangle")
+                self.canvas.create_line(self.perp_x_stop, self.perp_y_stop,
+                                        self.stop_x, self.stop_y,
+                                        fill='red', tags="rectangle")
+                self.canvas.create_line(self.start_x, self.start_y,
+                                        self.stop_x, self.stop_y,
+                                        fill='red', tags="rectangle")
+
+            self.set_draw_rectangle_mode()
+
+            # Calculate global coordinates of the rectangle's corners
+            global_start = self.canvas_coor_to_global(self.start_x, self.start_y)
+            global_perp_start = self.canvas_coor_to_global(self.perp_x_start, self.perp_y_start)
+            global_perp_stop = self.canvas_coor_to_global(self.perp_x_stop, self.perp_y_stop)
+            global_stop = self.canvas_coor_to_global(self.stop_x, self.stop_y)
+
+            self.send_rectangle_to_right_frame(global_start, global_perp_start, global_perp_stop, global_stop)
+
+    def send_rectangle_to_right_frame(self, start_coords, perp_start_coords, perp_stop_coords, stop_coords):
+        self.frame_right.add_rectangle(start_coords, perp_start_coords, perp_stop_coords, stop_coords)
 
     def update_canvas_objects(self):
         for section_name, section_info in self.frame_right.sections.items():
@@ -571,9 +750,6 @@ class ImageFrame(Frame):
                                     fill="black", font=("Arial", 14, "bold"))
             self.canvas.create_text(stop_x + label_offset_x, stop_y + label_offset_y, text="B", tags="label_B",
                                     fill="black", font=("Arial", 14, "bold"))
-
-
-
 
 
 
