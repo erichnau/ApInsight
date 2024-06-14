@@ -13,6 +13,7 @@ from GUI.ImageFrame import ImageFrame
 from GUI.MeasurementTool import MeasurementWindow
 from GUI.LeftFrame import LeftFrame
 from GUI.RightFrame import RightFrame
+from GUI.SectionViewer.SectionView import SectionView
 
 from data.ProjectData import ProjectData
 from config_manager import ConfigurationManager
@@ -157,7 +158,7 @@ class MenuBuilder:
         filemenu.add_command(label="Exit", command=self.master.quit)
 
         viewmenu = Menu(menubar, tearoff=0)
-        viewmenu.add_command(label="Velocity Analysis", state='disabled')
+        viewmenu.add_command(label="Velocity Analysis", state='normal', command=self.open_section_viewer)
         # viewmenu.add_command(label="Toggle Fullscreen")
 
         helpmenu = Menu(menubar, tearoff=0)
@@ -176,6 +177,10 @@ class MenuBuilder:
     def show_help(self):
         self.show_dialog("Help",
                          "Two videos explaining the installation and functionality of ApInsight can be found on YouTube:\n\n1. Setup and Installation: \nhttps://youtu.be/f0AKAc0pgbo\n\n2. Introduction and User Guide: \nhttps://youtu.be/lIJPaZ917v4 \n\nThese videos should answer most of your questions. If you have further issues, please post the issue directly in the GitHub repository: \nhttps://github.com/erichnau/ApInsight.git \n\nor send an e-mail to: \nerich.nau@niku.no")
+
+
+    def open_section_viewer(self):
+        SectionView(mode='velocity')
 
     def show_dialog(self, title, text):
         window = Toplevel(self.master)
@@ -423,7 +428,8 @@ class TopFrame(Frame):
         self.draw_section_button = tk.Button(self, text="Draw Section", command=self.enable_draw_mode, state='disabled')
         self.draw_section_button.pack(side='left', padx=5, pady=5)
 
-        self.draw_rectangle_button = tk.Button(self, text='Draw Rectangle', command=self.toggle_rectangle_mode, state='disabled')
+        self.draw_rectangle_button = tk.Button(self, text='Draw Rectangle', command=self.toggle_rectangle_mode,
+                                               state='disabled')
         self.draw_rectangle_button.pack(side='left', padx=5, pady=5)
 
         self.measure_tool = tk.Button(self, text="Measure Tool", command=self.measure, state='disabled')
@@ -471,18 +477,15 @@ class TopFrame(Frame):
             self.draw_section_button.config(relief="sunken")
             self.frame_image.draw_section_mode = True
 
-
     def disable_draw_mode(self):
         self.draw_section_button.config(relief="raised")
         self.frame_image.draw_section_mode = False
-
 
     def toggle_rectangle_mode(self):
         if self.frame_image.draw_rectangle_mode:
             self.disable_rectangle_mode()
         else:
             self.enable_rectangle_mode()
-
 
     def enable_rectangle_mode(self):
         self.measure_tool.config(relief='raised')
@@ -504,14 +507,12 @@ class TopFrame(Frame):
         self.frame_image.set_draw_rectangle_mode()
         self.draw_rectangle_button.config(relief="sunken")
 
-
     def disable_rectangle_mode(self):
         # Add logic to disable rectangle mode
         self.frame_image.draw_rectangle_mode = False
         # Implement whatever logic is necessary to disable rectangle drawing mode
         self.draw_section_button.config(relief='raised')
         self.draw_rectangle_button.config(relief="raised")
-
 
     def measure(self):
         if self.measure_mode is True:

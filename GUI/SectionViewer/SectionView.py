@@ -9,6 +9,7 @@ import platform
 
 from config_manager import ConfigurationManager
 from GUI.SectionViewer.TopFrameTools import TopFrameTools
+from GUI.SectionViewer.TopFrameToolsVelocity import TopFrameToolsVelocity
 from GUI.SectionViewer.SectionCanvas import SectionCanvas
 
 monitors = get_monitors()
@@ -20,8 +21,9 @@ window_height = int(screen_res_primary[0]*0.50)
 
 
 class SectionView(tk.Toplevel):
-    def __init__(self, arb_section, project_file_path, frame_image, frame_left, top_frame, frame_right):
+    def __init__(self, arb_section=None, project_file_path=None, frame_image=None, frame_left=None, top_frame=None, frame_right=None, mode='arbitrary'):
         super().__init__()
+        self.mode = mode
         self.section = arb_section
 
         self.title("Section View")
@@ -37,30 +39,54 @@ class SectionView(tk.Toplevel):
 
         self.config_manager = ConfigurationManager('config.ini')
 
-        self.frame_image = frame_image
-        self.frame_left = frame_left
-        self.top_frame = top_frame
-        self.frame_right = frame_right
+        if mode == 'arbitrary':
+            self.frame_image = frame_image
+            self.frame_left = frame_left
+            self.top_frame = top_frame
+            self.frame_right = frame_right
 
-        self.project_file_path = project_file_path
-        self.file_name = self.frame_left.active_file_name
+            self.project_file_path = project_file_path
+            self.file_name = self.frame_left.active_file_name
 
-        self.create_temporary_folder()
-        self.create_top_frame()
-        self.create_widgets()
-        self._set_image_canvas()
-        self._set_section_window()
+            self.create_temporary_folder(self.mode)
+            self.create_top_frame()
+            self.create_widgets()
+            self._set_image_canvas()
+            self._set_section_window()
 
-        self.image_path = self.section.create_image_from_section(self.temp_folder_path, self.tf.vmin, self.tf.vmax)
-        self.section_canvas.display_section(self.image_path)
+            self.image_path = self.section.create_image_from_section(self.temp_folder_path, self.tf.vmin, self.tf.vmax)
+            self.section_canvas.display_section(self.image_path)
 
-        self._set_canvas_variables()
+            self._set_canvas_variables()
+
+        elif mode == 'velocity':
+            self.create_top_frame_velocity()
+            self.create_temporary_folder(self.mode)
+            self.create_widgets()
+            self._set_image_canvas()
 
 
     def create_top_frame(self):
         self.tf = TopFrameTools(self, self.section.section_data)
         self.tf.pack(side="top", fill="x")
         self.frame_left.set_top_frame_tools(self.tf)
+
+
+    def create_top_frame_velocity(self):
+        self.tf = TopFrameToolsVelocity(self, self.display_gpr_data, self.velo_pan, self.velo_zoom, self.velo_home)
+        self.tf.pack(side='top', fill='x')
+
+    def velo_home(self):
+        self.section_canvas.velo_home()
+
+    def velo_zoom(self):
+        self.section_canvas.velo_zoom()
+
+    def velo_pan(self):
+        self.section_canvas.velo_pan()
+
+    def display_gpr_data(self, data, info, vmax, vmin):
+        self.section_canvas.display_gpr_data(data, info, vmax, vmin)
 
 
     def _set_image_canvas(self):
@@ -84,6 +110,7 @@ class SectionView(tk.Toplevel):
         self.tf.image = self.section_canvas.image
         self.tf.set_zoom_controls()
 
+
     def create_widgets(self):
         window_width = self.winfo_width()
         window_height = self.winfo_height()
@@ -95,40 +122,45 @@ class SectionView(tk.Toplevel):
 
         self.pack_propagate(True)
 
-        self.section_canvas = SectionCanvas(image_frame, self.section, self.temp_folder_path, bg="white")
+        self.section_canvas = SectionCanvas(image_frame, self.section, self.temp_folder_path, mode=self.mode, bg="white")
         self.section_canvas.pack(fill="both", expand=True)
 
 
     def cleanup(self):
-        self.section_canvas.unbind('<Motion>')
+        if self.mode == 'arbitrary':
+            self.section_canvas.unbind('<Motion>')
 
-        self.frame_left.section_view_active = False
-        self.frame_image.section_view_active = False
-        self.frame_right.section_view_active = False
-        if self.frame_image.marker:
-            self.frame_image.clear_marker()
-        self.top_frame.section_view_active = False
+            self.frame_left.section_view_active = False
+            self.frame_image.section_view_active = False
+            self.frame_right.section_view_active = False
+            if self.frame_image.marker:
+                self.frame_image.clear_marker()
+            self.top_frame.section_view_active = False
 
-        self.frame_right.section_view_window = None
-        self.frame_right.section_view_active = False
-        self.frame_right.enable_section_button()
-        self.frame_right.enable_focus_buttons()
-        self.frame_right.enable_keep_checkbuttons()
-        self.frame_right.toggle_communication_button()
+            self.frame_right.section_view_window = None
+            self.frame_right.section_view_active = False
+            self.frame_right.enable_section_button()
+            self.frame_right.enable_focus_buttons()
+            self.frame_right.enable_keep_checkbuttons()
+            self.frame_right.toggle_communication_button()
 
-        self.frame_left.enable_project_checkboxes()
+            self.frame_left.enable_project_checkboxes()
 
         self.destroy()
 
-    def create_temporary_folder(self):
-        # Get the directory and base name of the JSON file
-        json_file_path = self.project_file_path
-        json_dir = os.path.dirname(json_file_path)
-        json_basename = os.path.basename(json_file_path)
-        json_name, _ = os.path.splitext(json_basename)
 
-        # Create a temporary folder path
-        self.temp_folder_path = os.path.join(json_dir, json_name + "_temp")
+    def create_temporary_folder(self, mode):
+        if mode == 'arbitrary':
+            # Get the directory and base name of the JSON file
+            json_file_path = self.project_file_path
+            json_dir = os.path.dirname(json_file_path)
+            json_basename = os.path.basename(json_file_path)
+            json_name, _ = os.path.splitext(json_basename)
+
+            # Create a temporary folder path
+            self.temp_folder_path = os.path.join(json_dir, json_name + "_temp")
+        elif mode == 'velocity':
+            self.temp_folder_path = 'c:/temp/apinsight/'
 
         # Create the temporary folder if it doesn't exist
         os.makedirs(self.temp_folder_path, exist_ok=True)
@@ -151,6 +183,7 @@ class SectionView(tk.Toplevel):
 
         return max_width
 
+
     def adjust_window_size(self, resized_width, resized_height, clear_topo=False, zoom=False):
         top_frame_width = self.calculate_frame_width(self.tf) + 50
 
@@ -164,7 +197,6 @@ class SectionView(tk.Toplevel):
         if clear_topo:
             window_width = min(window_width, int(screen_res_primary[1]*1))
             self.geometry(f"{window_width}x{self.orig_window_height}")
-
         elif zoom:
             # Calculate maximum allowable dimensions
             max_width = int(screen_res_primary[1] * 1)
@@ -195,7 +227,6 @@ class SectionView(tk.Toplevel):
                 self.max_height_reached = False
 
             self.geometry(f"{final_width}x{final_height}")
-
         else:
             # Resize the window
             self.geometry(f"{window_width}x{window_height}")
@@ -241,6 +272,7 @@ class SectionView(tk.Toplevel):
 
         return section_x
 
+
     def update_x_line(self, x, y, for_labels=False):
         x_offset = 50
         canvas_height = self.section_canvas.winfo_height()
@@ -264,6 +296,7 @@ class SectionView(tk.Toplevel):
         y_data = (depth / (depth_range * 100)) * num_rows  # Calculate y_data based on depth value
         return y_data
 
+
     def get_y_data_from_depth_dtm(self, depth):
         num_rows = len(self.section.section_data)
         depth_range = self.section_canvas.max_depth_new - self.section_canvas.min_depth_new
@@ -279,6 +312,7 @@ class SectionView(tk.Toplevel):
 
         return int(y_data)
 
+
     def get_depth_from_y_data_dtm(self, y_data):
         num_rows = len(self.section.section_data)
         depth_range = self.section_canvas.max_depth_new - self.section_canvas.min_depth_new
@@ -292,6 +326,7 @@ class SectionView(tk.Toplevel):
         depth_value_rounded = round(depth_value*100 / int(self.section.pixelsize_z*100)) * int(self.section.pixelsize_z*100)
 
         return depth_value_rounded
+
 
     def get_depth_from_y_data_ft(self, y_data):
         # Existing code to calculate depth_value
@@ -325,6 +360,7 @@ class SectionView(tk.Toplevel):
             elevation = self.elevation
 
         self.section_canvas.coordinates_label.update_coordinates(x, y, depth=depth, elevation=elevation)
+
 
     def update_y_line(self, depth):
         if self.tf.draw_y_line_var.get():
@@ -385,6 +421,7 @@ class SectionView(tk.Toplevel):
 
         return visible_left, visible_top, visible_right, visible_bottom
 
+
     def save_section(self):
         file_path = filedialog.asksaveasfilename(defaultextension='.png', filetypes=[('PNG Image', '*.png')])
         if not file_path:
@@ -404,12 +441,14 @@ class SectionView(tk.Toplevel):
 
         self.plot_image_with_labels(file_path)
 
+
     def apply_transformations(self, visible_left, visible_top, visible_right, visible_bottom):
         image_path = self.section_canvas.topo_image_path if self.tf.topo_corrected else self.section_canvas.image_path
         pil_section_image = Image.open(image_path)
         pil_section_image = pil_section_image.resize(
             (self.section_canvas.section_image.width(), self.section_canvas.section_image.height()), Image.LANCZOS)
         return pil_section_image.crop((visible_left, visible_top, visible_right, visible_bottom))
+
 
     def plot_image_with_labels(self, file_path):
         image_array = np.array(self.cropped_image)
@@ -435,6 +474,7 @@ class SectionView(tk.Toplevel):
         plt.close(fig)
         self.lift()
 
+
     def _plot_labels(self, ax, ax_sec):
         x_label_data = self.get_label_data(self.section_canvas.x_labels)
         y_label_data = self.get_label_data(self.section_canvas.y_labels)
@@ -450,6 +490,7 @@ class SectionView(tk.Toplevel):
 
         for data in additional_label_data:
             self._plot_additional_labels(ax, data, depth_label_offset)
+
 
     def _configure_axis(self, ax, label_data, axis, invert=False):
         vals, labs = [], []
@@ -472,6 +513,7 @@ class SectionView(tk.Toplevel):
             ax.set_xticks(np.linspace(0, max_val - min_val, len(ticks)))
             ax.set_xticklabels(labs)
 
+
     def _plot_additional_labels(self, ax, data, depth_label_offset):
         if data['tag'] == 'dist_label':
             ax.text(data['x'] - self.section_canvas.y_axis_x, data['y'] - 5, data['text'], ha='center', va='top',
@@ -482,6 +524,7 @@ class SectionView(tk.Toplevel):
         elif data['tag'] == 'sec_depth_label':
             ax.text(data['x'] - self.section_canvas.y_axis_x + depth_label_offset, data['y'] - 10, data['text'],
                     rotation=90, ha='center', va='center', color='black', fontweight='bold')
+
 
     def get_label_data(self, label_ids):
         label_data = []
@@ -498,6 +541,7 @@ class SectionView(tk.Toplevel):
             label_data = self.recalculate_labels(label_data)
 
         return label_data
+
 
     def recalculate_labels(self, data):
         axis = data[0]['tag']
@@ -516,6 +560,7 @@ class SectionView(tk.Toplevel):
 
         return label_data_new
 
+
     def _calculate_pixel_intervals(self, axis):
         if axis == 'label_x':
             min_pixel = self.section_canvas.y_axis_x
@@ -528,6 +573,7 @@ class SectionView(tk.Toplevel):
         pixel_interval = total_pixel_distance / 4
 
         return min_pixel, max_pixel, pixel_interval
+
 
     def _calculate_label_intervals(self, data, min_pixel):
         axis = data[0]['tag']
@@ -550,6 +596,7 @@ class SectionView(tk.Toplevel):
         label_interval = total_range / 4
 
         return start_value, total_range, label_interval
+
 
     def update_depthslice_canvas(self, x, y):
         x_coor, y_coor = self.get_xy_from_section_coor(x)
@@ -582,6 +629,7 @@ class SectionView(tk.Toplevel):
         self.frame_image.coordinates_label.update_coordinates(x_coor, y_coor)
         self.section_canvas.coordinates_label.update_coordinates(x_coor, y_coor, depth=depth, elevation=elevation)
 
+
     def get_xy_from_section_coor(self, x):
         section_start = self.section.section_coor[0]  # Start point of the section
         section_stop = self.section.section_coor[1]  # Stop point of the section
@@ -598,6 +646,7 @@ class SectionView(tk.Toplevel):
         y = round(section_start[1] + (section_stop[1] - section_start[1]) * ratio, 3)
 
         return x, y
+
 
     def get_depth_from_y_data(self, y_data):
         num_rows = len(self.section.section_data)

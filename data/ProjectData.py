@@ -11,7 +11,6 @@ from GPR_func import read_fld
 from config_manager import ConfigurationManager
 
 from GPR_func._2D_vertical import filter_nan_and_zero_rows
-from GUI._3DViewer import _3DViewer
 
 
 class ProjectData:

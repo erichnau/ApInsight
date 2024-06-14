@@ -2,16 +2,20 @@ import tkinter as tk
 from PIL import Image, ImageTk
 import numpy as np
 from tkinter import messagebox
+import matplotlib as mpl
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from matplotlib.figure import Figure
 
 from GUI.CoordinatesLabel import CoordinatesLabel
 from GUI.SectionViewer.DTMFileSelector import DTMFileSelector
 
 
 class SectionCanvas(tk.Canvas):
-    def __init__(self, master, section, temp_folder_path, *args, **kwargs):
+    def __init__(self, master, section, temp_folder_path, mode, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
         self.section = section
         self.temp_folder_path = temp_folder_path
+        self.mode = mode
 
         self.height_profile = None
         self.image_path = None
@@ -35,11 +39,79 @@ class SectionCanvas(tk.Canvas):
         self.secondary_y_labels = []
         self.additional_labels = []
 
+        if self.mode == 'arbitrary':
+            self.bindings()
+            self.coordinates_label = CoordinatesLabel(self)
+        elif self.mode =='velocity':
+            self.figure = None
+
+
+    def bindings(self):
         self.bind("<ButtonPress-1>", self.start_pan)
         self.bind("<B1-Motion>", self.pan_image)
 
-        self.coordinates_label = CoordinatesLabel(self)
+    def display_gpr_data(self, data, info, vmax, vmin):
+        self.trace_increment = float(info[0])
+        self.time_increment = float(info[1])
+        self.nr_traces = info[2]
+        self.nr_samples = info[3]
+        self.antenna_separation = info[4]
 
+        timewindow = float(info[1]) * float(info[3])
+
+        self.profilePos = (float(info[0]) / 2) * np.arange(0, (data.shape[1] * 2))
+        self.twtt = np.linspace(0, timewindow, info[3])
+
+        self.yrng = [np.min(self.twtt), np.max(self.twtt)]
+        self.xrng = [np.min(self.profilePos), np.max(self.profilePos)]
+
+        dx = self.profilePos[3] - self.profilePos[2]
+        dt = self.twtt[3] - self.twtt[2]
+
+        if self.figure is None:
+            canvas_width = self.winfo_width()
+            canvas_height = self.winfo_height()
+
+            left_margin = 50 / canvas_width
+            right_margin = 1 - 50 / canvas_width
+            top_margin = 1 - 10 / canvas_height
+            bottom_margin = 75 / canvas_height
+
+            self.figure = Figure(figsize=(canvas_width / 100, canvas_height / 100), dpi=100)
+            self.figure.subplots_adjust(left=left_margin, right=right_margin, top=top_margin, bottom=bottom_margin)
+
+            self.canvas = FigureCanvasTkAgg(self.figure, master=self)
+            self.toolbar = NavigationToolbar2Tk(self.canvas, self)
+            self.toolbar.update()
+            self.toolbar.pack_forget()
+            self.canvas.get_tk_widget().place(x=0, y=0)
+
+        self.figure.clear()
+        self.ax = self.figure.add_subplot(111)
+        self.ax.imshow(data, cmap='gray', vmax=vmax, vmin=vmin,
+                       extent=[min(self.profilePos) - dx / 2.0, max(self.profilePos) + dx / 2.0,
+                               max(self.twtt) + dt / 2.0, min(self.twtt) - dt / 2.0],
+                       aspect='auto')
+
+        self.ax.set_ylim(self.yrng)
+        self.ax.set_xlim(self.xrng)
+        self.ax.set_ylabel("two-way travel time [ns]", fontsize=mpl.rcParams['font.size'])
+        self.ax.invert_yaxis()
+
+        self.ax.get_xaxis().set_visible(True)
+        self.ax.get_yaxis().set_visible(True)
+        self.ax.set_xlabel("profile position [m]", fontsize=mpl.rcParams['font.size'])
+
+        self.canvas.draw()
+
+    def velo_pan(self):
+        self.toolbar.pan()
+
+    def velo_home(self):
+        self.toolbar.home()
+
+    def velo_zoom(self):
+        self.toolbar.zoom()
 
     def start_pan(self, event):
         self.init_image_position = (event.x, event.y)
