@@ -3,8 +3,12 @@ from PIL import Image, ImageTk
 import numpy as np
 from tkinter import messagebox
 import matplotlib as mpl
+from matplotlib import pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
+from matplotlib.backend_bases import MouseButton
+from math import sqrt
+import time
 
 from GUI.CoordinatesLabel import CoordinatesLabel
 from GUI.SectionViewer.DTMFileSelector import DTMFileSelector
@@ -86,9 +90,11 @@ class SectionCanvas(tk.Canvas):
             self.toolbar.pack_forget()
             self.canvas.get_tk_widget().place(x=0, y=0)
 
+            self.canvas.mpl_connect('motion_notify_event', self.disable_cursor_change)
+
         self.figure.clear()
         self.ax = self.figure.add_subplot(111)
-        self.ax.imshow(data, cmap='gray', vmax=vmax, vmin=vmin,
+        self.image = self.ax.imshow(data, cmap='gray', vmax=vmax, vmin=vmin,
                        extent=[min(self.profilePos) - dx / 2.0, max(self.profilePos) + dx / 2.0,
                                max(self.twtt) + dt / 2.0, min(self.twtt) - dt / 2.0],
                        aspect='auto')
@@ -104,6 +110,19 @@ class SectionCanvas(tk.Canvas):
 
         self.canvas.draw()
 
+    def update_contrast(self, vmin, vmax):
+        if self.image:
+            self.image.set_clim(vmin=vmin, vmax=vmax)
+            self.canvas.draw()
+            print('yeeeeeeeee')
+
+
+    def disable_cursor_change(self, event):
+        # Overriding default cursor change behavior in Matplotlib
+        if event.inaxes:
+            event.canvas.get_tk_widget().config(cursor="")
+
+
     def velo_pan(self):
         self.toolbar.pan()
 
@@ -112,6 +131,46 @@ class SectionCanvas(tk.Canvas):
 
     def velo_zoom(self):
         self.toolbar.zoom()
+
+    def velo_click(self, event):
+        print('hereeeeeeeee')
+        if self.tf.velo_analysis.get() == 1 and event.button == MouseButton.LEFT:
+            print('nooooooooooooo')
+            self.velo_click_flag = True
+            self.click_time = time.time()
+            print(self.click_time)
+
+    def velo_release(self, event):
+        if self.tf.velo_analysis.get() == 1 and event.button == MouseButton.LEFT:
+            release_time = time.time()
+            click_duration = release_time - self.click_time
+            print('lick_duration_', click_duration)
+            self.velo_click_flag = False
+
+            if click_duration < 0.2:  # Adjust the duration threshold as needed
+                self.x = event.xdata
+                self.y = event.ydata
+                self.plot_hyperbola()
+
+    def plot_hyperbola(self):
+        try:
+            remove_hyp = self.hyperbola.pop(0)
+            remove_hyp.remove()
+            remove_hyp2 = self.hyperbola2.pop(0)
+            remove_hyp2.remove()
+        except:
+            print('nix')
+
+        x = self.profilePos - self.x
+        v = float(self.tf.velo_value.get())
+        d = sqrt((v * float(self.y) / 2.0) ** 2 + (self.antenna_separation / 2) ** 2)
+        d2 = v * float(self.y) / 2.0
+
+        k = np.sqrt(d ** 2 + np.power(x, 2)) - (d - d2)
+        t2 = 2 * k / v
+
+        self.hyperbola = self.ax.plot(self.profilePos, t2, '--g', linewidth=1)
+        self.canvas.draw()
 
     def start_pan(self, event):
         self.init_image_position = (event.x, event.y)

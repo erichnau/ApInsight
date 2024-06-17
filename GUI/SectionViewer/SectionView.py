@@ -91,6 +91,7 @@ class SectionView(tk.Toplevel):
 
     def _set_image_canvas(self):
         self.tf.section_canvas = self.section_canvas
+        self.section_canvas.tf = self.tf
 
 
     def _set_section_window(self):

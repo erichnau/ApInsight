@@ -1,7 +1,9 @@
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, INSERT
 import os
 import numpy as np
+from PIL import Image, ImageTk
+import platform
 
 import GPR_func.GPR_data_formats as gpr
 
@@ -14,6 +16,9 @@ class TopFrameToolsVelocity(tk.Frame):
         self.callback_home = callback_home
         self.callback_zoom = callback_zoom
         self.create_widgets()
+
+        self.velo_model = []
+
 
     def create_widgets(self):
         self.button_open = tk.Button(self, text='Open file', command=self.open_file)
@@ -35,13 +40,21 @@ class TopFrameToolsVelocity(tk.Frame):
         self.label_contrast = tk.Label(self.contrast_frame, text='Contrast')
         self.label_contrast.grid(row=1, column=1)
 
-        self.zoom = tk.Button(self, text='Zoom In', command=self.callback_zoom)
-        self.zoom.grid(row=2, column=0)
+        self.home = tk.Button(self, text='Zoom to full extent', command=self.callback_home)
+        self.home.grid(row=2, column=0)
 
-        self.home = tk.Button(self, text='Home', command=self.callback_home)
-        self.home.grid(row=2, column=1)
+        self.zoom_image = Image.open("zoom.ico")
+        self.zoom_photo = ImageTk.PhotoImage(self.zoom_image)
 
-        self.pan_button = tk.Button(self, text='Pan', command=self.callback_pan)
+        self.zoom_button = tk.Button(self, image=self.zoom_photo, command=self.toggle_zoom)
+        self.zoom_button.grid(row=2, column=1)
+
+        # Load the image using PIL
+        self.pan_image = Image.open("pan.ico")
+        self.pan_photo = ImageTk.PhotoImage(self.pan_image)
+
+        # Create the custom pan button with the image
+        self.pan_button = tk.Button(self, image=self.pan_photo, command=self.toggle_pan)
         self.pan_button.grid(row=2, column=2)
 
         self.velocity_label = tk.Label(self, text='Velocity:')
@@ -56,7 +69,7 @@ class TopFrameToolsVelocity(tk.Frame):
 
         self.velo_analysis = tk.IntVar()
         self.velo_checkbutton = tk.Checkbutton(self, variable=self.velo_analysis, text='Velocity Analysis',
-                                               onvalue=1, offvalue=0, command=self.bindings)
+                                               onvalue=1, offvalue=0, command=self.velo_bindings)
         self.velo_checkbutton.grid(row=3, column=3)
 
         self.inc_vel = tk.Button(self, text='+', command=self.increase_velo)
@@ -96,6 +109,8 @@ class TopFrameToolsVelocity(tk.Frame):
         self.line_label2.grid(row=0, column=9)
 
         self.velo_model = []
+
+
     def open_file(self):
         file_path = filedialog.askopenfilename(filetypes=[('DAT', '*.dat'), ("RD3", '*.rd3'), ('RD7', '*.rd7'), ('NPY', '*.npy')])
         if file_path:
@@ -106,40 +121,144 @@ class TopFrameToolsVelocity(tk.Frame):
             vmin = np.min(data)
             self.callback_display_data(data, info, vmax, vmin)
 
+        self.folder = file_path[:file_path.rfind('/')]  # [:-31] to get main folder(after #)
+
+        proj_name_temp = file_path[file_path.rfind('/') + 1:]
+        ind1 = proj_name_temp.rfind('_')
+        temp_1 = proj_name_temp[:proj_name_temp.rfind('_')]
+        ind2 = temp_1.rfind('_')
+
+        self.line_nr = proj_name_temp[:ind1][ind2 + 1:]
+        self.project_name = proj_name_temp[:ind1][:ind2]
+        self.appendix = proj_name_temp[ind1:].rsplit('.')[0]
+        self.extension = proj_name_temp[ind1:].rsplit('.')[1]
+
+        self.project_label2.config(text=self.project_name)
+        self.line_label2.config(text=self.line_nr)
+
+
+    def toggle_pan(self):
+        if self.pan_button.config('relief')[-1] == 'sunken':
+            self.pan_button.config(relief="raised")
+            self.section_canvas.config(cursor="hand2")
+        else:
+            self.pan_button.config(relief="sunken")
+            self.zoom_button.config(relief="raised")
+
+
+        self.callback_pan()
+        self.section_canvas.config(cursor="hand2")
+
+
+    def toggle_zoom(self):
+        if self.zoom_button.config('relief')[-1] == 'sunken':
+            self.zoom_button.config(relief="raised")
+        else:
+            self.zoom_button.config(relief="sunken")
+            self.pan_button.config(relief="raised")
+
+        self.callback_zoom()
 
 
     def exit_viewer(self):
         self.master.destroy()
 
+
     def increase_contrast(self):
-        pass
+        vmax = float(self.section_canvas.image.get_clim()[1]) / 1.15
+        vmin = float(self.section_canvas.image.get_clim()[0]) / 1.15
+        self.section_canvas.update_contrast(vmin, vmax)
+
 
     def decrease_contrast(self):
-        pass
+        vmax = float(self.section_canvas.image.get_clim()[1]) * 1.15
+        vmin = float(self.section_canvas.image.get_clim()[0]) * 1.15
+        self.section_canvas.update_contrast(vmin, vmax)
 
-    def bindings(self):
-        pass
+
+    def velo_bindings(self):
+        if self.velo_analysis.get() == 1:
+            self.velo_analysis.set(1)
+            self.section_canvas.canvas.mpl_connect('button_press_event', self.section_canvas.velo_click)
+            self.section_canvas.canvas.mpl_connect('button_release_event', self.section_canvas.velo_release)
+
+            if platform.system() == 'Windows':
+                self.section_canvas.bind_all("<MouseWheel>", self.on_mouse_wheel)
+            else:
+                self.bind_all("<Button-4>", self.on_mouse_wheel)
+                self.bind_all("<Button-5>", self.on_mouse_wheel)
+
+        elif self.velo_analysis.get() == 0:
+            self.velo_analysis.set(0)
+            self.section_canvas.canvas.mpl_disconnect('button_press_event')
+            self.section_canvas.canvas.mpl_disconnect('button_release_event')
+
+            if platform.system() == 'Windows':
+                self.section_canvas.unbind_all("<MouseWheel>")
+            else:
+                self.unbind_all("<Button-4>")
+                self.unbind_all("<Button-5>")
+
 
     def increase_velo(self):
-        pass
+        value = round(float(self.velo_value.get()) + 0.0025, 4)
+        self.velo_value.delete(0, 'end')
+        self.velo_value.insert(INSERT, value)
+        self.section_canvas.plot_hyperbola()
+
 
     def decrease_velo(self):
-        pass
+        value = round(float(self.velo_value.get()) - 0.0025, 4)
+        self.velo_value.delete(0, 'end')
+        self.velo_value.insert(INSERT, value)
+        self.section_canvas.plot_hyperbola()
+
+
+    def on_mouse_wheel(self, event):
+        if event.num == 5 or event.delta == -120:
+            self.decrease_velo()
+        if event.num == 4 or event.delta == 120:
+            self.increase_velo()
+
 
     def add_velocity_to_model(self):
-        pass
+        velo_value = []
+        try:
+            remove_hyp = self.section_canvas.hypberbola.pop()
+            remove_hyp.remove()
+        except:
+            print('ft')
+
+        self.section_canvas.velo_point = self.section_canvas.ax.plot(self.section_canvas.x, self.section_canvas.y, marker="o", markersize=5, markeredgecolor="red",
+                                     markerfacecolor="red")
+        label = self.velo_value.get() + ' m/ns'
+        self.section_canvas.ax.annotate(label, (self.section_canvas.x, self.section_canvas.y), textcoords="offset points", xytext=(0, 10), ha='center')
+
+        velo_value.append(self.line_nr)
+        velo_value.append(round(self.section_canvas.x, 3))
+        velo_value.append(round(self.section_canvas.y, 3))
+        velo_value.append(self.velo_value.get())
+
+        self.velo_model.append(velo_value)
+
+        self.section_canvas.canvas.draw()
+
 
     def plot_velocity_model(self):
         pass
 
+
     def save_velocity_model(self):
         pass
+
 
     def load_velocity_model(self):
         pass
 
+
     def previous_profile(self):
         pass
+
 
     def next_profile(self):
         pass
