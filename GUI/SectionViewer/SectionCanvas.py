@@ -114,7 +114,6 @@ class SectionCanvas(tk.Canvas):
         if self.image:
             self.image.set_clim(vmin=vmin, vmax=vmax)
             self.canvas.draw()
-            print('yeeeeeeeee')
 
 
     def disable_cursor_change(self, event):
@@ -133,18 +132,14 @@ class SectionCanvas(tk.Canvas):
         self.toolbar.zoom()
 
     def velo_click(self, event):
-        print('hereeeeeeeee')
         if self.tf.velo_analysis.get() == 1 and event.button == MouseButton.LEFT:
-            print('nooooooooooooo')
             self.velo_click_flag = True
             self.click_time = time.time()
-            print(self.click_time)
 
     def velo_release(self, event):
         if self.tf.velo_analysis.get() == 1 and event.button == MouseButton.LEFT:
             release_time = time.time()
             click_duration = release_time - self.click_time
-            print('lick_duration_', click_duration)
             self.velo_click_flag = False
 
             if click_duration < 0.2:  # Adjust the duration threshold as needed
@@ -153,13 +148,9 @@ class SectionCanvas(tk.Canvas):
                 self.plot_hyperbola()
 
     def plot_hyperbola(self):
-        try:
+        if hasattr(self, 'hyperbola') and self.hyperbola:
             remove_hyp = self.hyperbola.pop(0)
             remove_hyp.remove()
-            remove_hyp2 = self.hyperbola2.pop(0)
-            remove_hyp2.remove()
-        except:
-            print('nix')
 
         x = self.profilePos - self.x
         v = float(self.tf.velo_value.get())

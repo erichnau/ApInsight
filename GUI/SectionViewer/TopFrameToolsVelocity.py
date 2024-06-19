@@ -4,13 +4,18 @@ import os
 import numpy as np
 from PIL import Image, ImageTk
 import platform
+from matplotlib import pyplot as plt
+from os import path
 
 import GPR_func.GPR_data_formats as gpr
+from GPR_func.GPR_proc import bin_by
 
 
 class TopFrameToolsVelocity(tk.Frame):
-    def __init__(self, parent, callback_display_data, callback_pan, callback_zoom, callback_home):
-        super().__init__(parent)
+    def __init__(self, master, callback_display_data, callback_pan, callback_zoom, callback_home):
+        super().__init__(master)
+
+        self.master = master
         self.callback_display_data = callback_display_data
         self.callback_pan = callback_pan
         self.callback_home = callback_home
@@ -19,100 +24,103 @@ class TopFrameToolsVelocity(tk.Frame):
 
         self.velo_model = []
 
-
     def create_widgets(self):
-        self.button_open = tk.Button(self, text='Open file', command=self.open_file)
-        self.button_open.grid(row=0, column=0)
+        # First row - first frame for file operations
+        file_operations_frame = tk.Frame(self, highlightcolor='black', borderwidth=1, relief='solid', pady=5, padx=5)
+        file_operations_frame.grid(row=0, column=0, padx=10, pady=5, sticky="w")
 
-        self.button_exit = tk.Button(self, text='Exit', command=self.exit_viewer)
-        self.button_exit.grid(row=0, column=1)
+        self.button_open = tk.Button(file_operations_frame, text='Open file', command=self.open_file)
+        self.button_open.pack(side="left", padx=5, pady=5)
 
-        self.contrast_frame = tk.Frame(self, bg="white", width=150, height=25, highlightbackground="black",
-                                       highlightthickness=1)
-        self.contrast_frame.grid(row=1, column=0)
+        self.previous_file = tk.Button(file_operations_frame, text='Previous', command=self.previous_profile)
+        self.previous_file.pack(side="left", padx=5, pady=5)
 
-        self.button_increase_contrast = tk.Button(self.contrast_frame, text='+', command=self.increase_contrast)
-        self.button_increase_contrast.grid(row=1, column=2)
+        self.next_file = tk.Button(file_operations_frame, text='Next', command=self.next_profile)
+        self.next_file.pack(side="left", padx=5, pady=5)
 
-        self.button_decrease_contrast = tk.Button(self.contrast_frame, text='-', command=self.decrease_contrast)
-        self.button_decrease_contrast.grid(row=1, column=0)
+        self.button_exit = tk.Button(file_operations_frame, text='Exit', command=self.exit_viewer)
+        self.button_exit.pack(side="left", padx=5, pady=5)
 
-        self.label_contrast = tk.Label(self.contrast_frame, text='Contrast')
-        self.label_contrast.grid(row=1, column=1)
+        # First row - second frame for project and line labels
+        project_frame = tk.Frame(self, highlightcolor='black', borderwidth=1, relief='solid', pady=5, padx=5)
+        project_frame.grid(row=0, column=1, padx=10, pady=5, sticky="e")
 
-        self.home = tk.Button(self, text='Zoom to full extent', command=self.callback_home)
-        self.home.grid(row=2, column=0)
+        self.project_label = tk.Label(project_frame, text='Project: ', font=('Arial', 11, 'bold'))
+        self.project_label.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.zoom_image = Image.open("zoom.ico")
+        self.project_label2 = tk.Label(project_frame, text='no file', font=('Arial', 11, 'bold'))
+        self.project_label2.pack(side=tk.LEFT, padx=5, pady=5)
+
+        self.line_label = tk.Label(project_frame, text=', Line nr.: ', font=('Arial', 11, 'bold'))
+        self.line_label.pack(side=tk.LEFT, padx=5, pady=5)
+
+        self.line_label2 = tk.Label(project_frame, text='no file', font=('Arial', 11, 'bold'))
+        self.line_label2.pack(side=tk.LEFT, padx=5, pady=5)
+
+        # Second row - first frame for zoom and pan buttons
+        zoom_pan_frame = tk.Frame(self, highlightcolor='black', borderwidth=1, relief='solid', pady=5, padx=5)
+        zoom_pan_frame.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+
+        self.home = tk.Button(zoom_pan_frame, text='Zoom to full extent', command=self.callback_home)
+        self.home.pack(side=tk.LEFT, padx=5, pady=5)
+
+        self.zoom_image = Image.open("zoom.ico").resize((20, 20), Image.LANCZOS)
         self.zoom_photo = ImageTk.PhotoImage(self.zoom_image)
 
-        self.zoom_button = tk.Button(self, image=self.zoom_photo, command=self.toggle_zoom)
-        self.zoom_button.grid(row=2, column=1)
+        self.zoom_button = tk.Button(zoom_pan_frame, image=self.zoom_photo, command=self.toggle_zoom)
+        self.zoom_button.pack(side=tk.LEFT, padx=5, pady=5)
 
-        # Load the image using PIL
-        self.pan_image = Image.open("pan.ico")
+        self.pan_image = Image.open("pan.ico").resize((20, 20), Image.LANCZOS)
         self.pan_photo = ImageTk.PhotoImage(self.pan_image)
 
-        # Create the custom pan button with the image
-        self.pan_button = tk.Button(self, image=self.pan_photo, command=self.toggle_pan)
-        self.pan_button.grid(row=2, column=2)
+        self.pan_button = tk.Button(zoom_pan_frame, image=self.pan_photo, command=self.toggle_pan)
+        self.pan_button.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.velocity_label = tk.Label(self, text='Velocity:')
-        self.velocity_label.grid(row=3, column=0)
-
-        self.velo_value = tk.Entry(self, width=15)
-        self.velo_value.grid(row=3, column=1)
-        self.velo_value.insert(tk.INSERT, '0.1')
-
-        self.velo_label = tk.Label(self, text='m/ns')
-        self.velo_label.grid(row=3, column=2)
+        # Second row - second frame for velocity analysis and model buttons
+        velo_frame = tk.Frame(self, highlightcolor='black', borderwidth=1, relief='solid', pady=5, padx=5)
+        velo_frame.grid(row=1, column=1, padx=10, pady=5, sticky="e")
 
         self.velo_analysis = tk.IntVar()
-        self.velo_checkbutton = tk.Checkbutton(self, variable=self.velo_analysis, text='Velocity Analysis',
-                                               onvalue=1, offvalue=0, command=self.velo_bindings)
-        self.velo_checkbutton.grid(row=3, column=3)
+        self.velo_checkbutton = tk.Checkbutton(velo_frame, variable=self.velo_analysis, text='Velocity Analysis',
+                                               onvalue=1, offvalue=0, command=self.velo_bindings,
+                                               font=('Arial', 11, 'bold'))
+        self.velo_checkbutton.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.inc_vel = tk.Button(self, text='+', command=self.increase_velo)
-        self.inc_vel.grid(row=3, column=4)
+        self.velocity_label = tk.Label(velo_frame, text='Velocity:', font=('Arial', 11))
+        self.velocity_label.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.dec_vel = tk.Button(self, text='-', command=self.decrease_velo)
-        self.dec_vel.grid(row=3, column=5)
+        self.velo_value = tk.Entry(velo_frame, width=10, validate='key',
+                                   validatecommand=(self.register(self.validate_velo), '%P'))
+        self.velo_value.pack(side=tk.LEFT, padx=5, pady=5)
+        self.velo_value.insert(tk.INSERT, '0.1')
 
-        self.add_velo_value = tk.Button(self, text='Add to model', command=self.add_velocity_to_model)
-        self.add_velo_value.grid(row=4, column=0)
+        self.velo_label = tk.Label(velo_frame, text='m/ns', font=('Arial', 11))
+        self.velo_label.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.plot_velo_model = tk.Button(self, text='Plot velocity model', command=self.plot_velocity_model)
-        self.plot_velo_model.grid(row=4, column=1)
+        self.inc_vel = tk.Button(velo_frame, text='+', command=self.increase_velo)
+        self.inc_vel.pack(side=tk.LEFT, padx=2, pady=2)
 
-        self.save_velo_model = tk.Button(self, text='Save velocity model', command=self.save_velocity_model)
-        self.save_velo_model.grid(row=4, column=2)
+        self.dec_vel = tk.Button(velo_frame, text='-', command=self.decrease_velo)
+        self.dec_vel.pack(side=tk.LEFT, padx=2, pady=2)
 
-        self.load_velo_model = tk.Button(self, text='Load velocity model', command=self.load_velocity_model)
-        self.load_velo_model.grid(row=4, column=3)
+        self.add_velo_value = tk.Button(velo_frame, text='Add to model', command=self.add_velocity_to_model)
+        self.add_velo_value.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.previous_file = tk.Button(self, text='Previous', command=self.previous_profile)
-        self.previous_file.grid(row=4, column=4)
+        self.load_velo_model = tk.Button(velo_frame, text='Load velocity model', command=self.load_velocity_model)
+        self.load_velo_model.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.next_file = tk.Button(self, text='Next', command=self.next_profile)
-        self.next_file.grid(row=4, column=5)
+        self.save_velo_model = tk.Button(velo_frame, text='Save velocity model', command=self.save_velocity_model)
+        self.save_velo_model.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.project_label = tk.Label(self, text='Project: ', font=('Arial 11 bold'))
-        self.project_label.grid(row=0, column=6)
-
-        self.project_label2 = tk.Label(self, text='no file', font=('Arial 11 bold'))
-        self.project_label2.grid(row=0, column=7)
-
-        self.line_label = tk.Label(self, text=',   Line nr.: ', font=('Arial 11 bold'))
-        self.line_label.grid(row=0, column=8)
-
-        self.line_label2 = tk.Label(self, text='no file', font=('Arial 11 bold'))
-        self.line_label2.grid(row=0, column=9)
+        self.plot_velo_model = tk.Button(velo_frame, text='Plot velocity model', command=self.plot_velocity_model)
+        self.plot_velo_model.pack(side=tk.LEFT, padx=5, pady=5)
 
         self.velo_model = []
 
+    def open_file(self, file_path=None):
+        if file_path == None:
+            file_path = filedialog.askopenfilename(filetypes=[('DAT', '*.dat')])   #, ("RD3", '*.rd3'), ('RD7', '*.rd7'), ('NPY', '*.npy')])
 
-    def open_file(self):
-        file_path = filedialog.askopenfilename(filetypes=[('DAT', '*.dat'), ("RD3", '*.rd3'), ('RD7', '*.rd7'), ('NPY', '*.npy')])
         if file_path:
             file_root, _ = os.path.splitext(file_path)
             info = gpr.read_par(file_root)
@@ -188,6 +196,8 @@ class TopFrameToolsVelocity(tk.Frame):
                 self.bind_all("<Button-4>", self.on_mouse_wheel)
                 self.bind_all("<Button-5>", self.on_mouse_wheel)
 
+            self.bind_all("<space>", self.add_velocity_to_model)
+
         elif self.velo_analysis.get() == 0:
             self.velo_analysis.set(0)
             self.section_canvas.canvas.mpl_disconnect('button_press_event')
@@ -199,19 +209,39 @@ class TopFrameToolsVelocity(tk.Frame):
                 self.unbind_all("<Button-4>")
                 self.unbind_all("<Button-5>")
 
+            self.unbind_all("<space>")
 
     def increase_velo(self):
-        value = round(float(self.velo_value.get()) + 0.0025, 4)
+        speed_of_light_m_ns = 0.299792458  # Speed of light in m/ns
+        current_value = float(self.velo_value.get())
+        new_value = round(current_value + 0.0025, 4)
+
+        if new_value > speed_of_light_m_ns:
+            new_value = speed_of_light_m_ns
+            print(f"Velocity value cannot exceed the speed of light ({speed_of_light_m_ns} m/ns). Setting to maximum.")
+
         self.velo_value.delete(0, 'end')
-        self.velo_value.insert(INSERT, value)
+        self.velo_value.insert(tk.INSERT, new_value)
         self.section_canvas.plot_hyperbola()
 
 
     def decrease_velo(self):
         value = round(float(self.velo_value.get()) - 0.0025, 4)
         self.velo_value.delete(0, 'end')
-        self.velo_value.insert(INSERT, value)
+        self.velo_value.insert(tk.INSERT, value)
         self.section_canvas.plot_hyperbola()
+
+    def validate_velo(self, proposed_value):
+        if proposed_value == "":  # Allow the entry to be empty
+            return True
+        try:
+            value = float(proposed_value)
+            if value > 0.299792458:  # Speed of light in m/ns
+                print(f"Velocity value cannot exceed the speed of light (0.299792458 m/ns).")
+                return False
+            return True
+        except ValueError:
+            return False
 
 
     def on_mouse_wheel(self, event):
@@ -221,23 +251,42 @@ class TopFrameToolsVelocity(tk.Frame):
             self.increase_velo()
 
 
-    def add_velocity_to_model(self):
-        velo_value = []
-        try:
-            remove_hyp = self.section_canvas.hypberbola.pop()
-            remove_hyp.remove()
-        except:
-            print('ft')
+    def point_exists_in_model(self, x, y, velo):
+        for value in self.velo_model:
+            if (value[1] == x) and (value[2] == y) and (value[3] == velo):
+                return True
+        return False
 
-        self.section_canvas.velo_point = self.section_canvas.ax.plot(self.section_canvas.x, self.section_canvas.y, marker="o", markersize=5, markeredgecolor="red",
-                                     markerfacecolor="red")
-        label = self.velo_value.get() + ' m/ns'
-        self.section_canvas.ax.annotate(label, (self.section_canvas.x, self.section_canvas.y), textcoords="offset points", xytext=(0, 10), ha='center')
+
+    def add_velocity_to_model(self, event=None):
+        velo_value = []
+
+        if hasattr(self.section_canvas, 'hyperbola') and self.section_canvas.hyperbola:
+            remove_hyp = self.section_canvas.hyperbola.pop(0)
+            remove_hyp.remove()
+
+        # Get the current point
+        current_x = round(self.section_canvas.x, 3)
+        current_y = round(self.section_canvas.y, 3)
+        current_velo = self.velo_value.get()
+
+        # Check if the point already exists in the model
+        if self.point_exists_in_model(current_x, current_y, current_velo):
+            print('Point already exists in the model.')
+            return
+
+        # Add the point to the model
+        self.section_canvas.velo_point = self.section_canvas.ax.plot(self.section_canvas.x, self.section_canvas.y,
+                                                                     marker="o", markersize=5, markeredgecolor="red",
+                                                                     markerfacecolor="red")
+        label = current_velo + ' m/ns'
+        self.section_canvas.ax.annotate(label, (self.section_canvas.x, self.section_canvas.y),
+                                        textcoords="offset points", xytext=(0, 10), ha='center')
 
         velo_value.append(self.line_nr)
-        velo_value.append(round(self.section_canvas.x, 3))
-        velo_value.append(round(self.section_canvas.y, 3))
-        velo_value.append(self.velo_value.get())
+        velo_value.append(current_x)
+        velo_value.append(current_y)
+        velo_value.append(current_velo)
 
         self.velo_model.append(velo_value)
 
@@ -245,22 +294,162 @@ class TopFrameToolsVelocity(tk.Frame):
 
 
     def plot_velocity_model(self):
-        pass
+        velo_for_plot_x = []
+        velo_for_plot_y = []
+
+        for element in self.velo_model:
+            velo_for_plot_x.append(float(element[2]))
+            velo_for_plot_y.append(float(element[3]))
+
+        x = np.array(velo_for_plot_x)
+        y = np.array(velo_for_plot_y)
+
+        # bin the values and determine the envelopes
+        df = bin_by(x, y, nbins=6, bins=None)
+
+        cols = ['#EE7550', '#F19463', '#F6B176']
+
+        plt.ion()
+        fig = plt.figure(111)
+        a = fig.add_subplot()
+        # plot the 3rd stdv
+        a.fill_between(df.x, df['5th'], df['95th'], alpha=0.7, color=cols[2])
+        a.fill_between(df.x, df['10th'], df['90th'], alpha=0.7, color=cols[1])
+        a.fill_between(df.x, df['25th'], df['75th'], alpha=0.7, color=cols[0])
+        # plt the line
+        plt.plot(df.x, df['median'], color='black', alpha=0.7, linewidth=1.5)
+
+        # plot the points
+        a.scatter(velo_for_plot_x, velo_for_plot_y, facecolors='blue', edgecolors='0', s=5, lw=1)
+
+        # plt.savefig('fig1.png', facecolor='white', edgecolor='none')
 
 
     def save_velocity_model(self):
-        pass
+        default_filename = self.project_name + '_Velocity_model.txt'
 
+        fileformat = [('GPR velocity model', '*.txt')]
+        file = filedialog.asksaveasfilename(filetype=fileformat, defaultextension=fileformat, initialdir=self.folder,
+                                            initialfile=default_filename, parent=self.master)
+
+        f = open(file, 'w')
+
+        for entry in self.velo_model:
+            f.write('%s,%s,%s,%s\n' % (entry[0], entry[1], entry[2], entry[3]))
+
+        f.close()
+
+        f = open(file, 'a')
+
+        f.write('\n')
+        f.write('Median' + '\n')
+
+        velo_for_plot_x = []
+        velo_for_plot_y = []
+
+        for element in self.velo_model:
+            velo_for_plot_x.append(float(element[2]))
+            velo_for_plot_y.append(float(element[3]))
+
+        x = np.array(velo_for_plot_x)
+        y = np.array(velo_for_plot_y)
+
+        # bin the values and determine the envelopes
+        df = bin_by(x, y, nbins=6, bins=None)
+        df_x_as_string = df.x.to_string(header=False, index=False).strip().split('\n')
+        df_median_as_string = df['median'].to_string(header=False, index=False).strip().split('\n')
+        for i in range(len(df_x_as_string) - 1):
+            f.write(df_x_as_string[i] + ',' + df_median_as_string[i] + '\n')
+
+        f.close()
 
     def load_velocity_model(self):
-        pass
+        fileformat = [('GPR velocity model', '*.txt')]
 
+        model_name = filedialog.askopenfilename(initialdir=self.folder, title='Open velocity model',
+                                                filetypes=fileformat, parent=self.master)
+        file = open(model_name, 'r')
 
-    def previous_profile(self):
-        pass
+        line_num = 0
+        next_part = 999
+        for line in file.readlines():
+            line_num += 1
+            if line.find('Median') >= 0:
+                next_part = line_num
 
+        self.velo_model = []
+        file = open(model_name, 'r')
+        for line in file.readlines()[:next_part - 2]:
+            velo_model_temp = []
+            single_line = line.rsplit(',')
+            velo_model_temp.append(single_line[0])
+            velo_model_temp.append(single_line[1])
+            velo_model_temp.append(single_line[2])
+            velo_model_temp.append(single_line[3].strip('\n'))
+            self.velo_model.append(velo_model_temp)
+
+        self.plot_saved_model()
+
+    def plot_saved_model(self):
+        if hasattr(self.section_canvas, 'hyperbola') and self.section_canvas.hyperbola:
+            remove_hyp = self.section_canvas.hyperbola.pop(0)
+            remove_hyp.remove()
+
+        if hasattr(self.section_canvas, 'velo_point') and self.section_canvas.velo_point:
+            remove_pnt = self.section_canvas.velo_point.pop()
+            remove_pnt.remove()
+
+        for entry in self.velo_model:
+            if entry[0] == self.line_nr:
+                self.section_canvas.point = self.section_canvas.ax.plot(float(entry[1]), float(entry[2]), marker="o", markersize=5,
+                                             markeredgecolor="red",
+                                             markerfacecolor="red")
+                label = entry[3] + ' m/ns'
+                self.section_canvas.ax.annotate(label, (float(entry[1]), float(entry[2])), textcoords="offset points", xytext=(0, 10),
+                             ha='center')
+
+        self.section_canvas.canvas.draw()
 
     def next_profile(self):
-        pass
+        c = 1
 
+        def open_next(c):
+            new_number = format((int(self.line_nr) + c), "03d")
+            next_profile = self.folder + '/' + self.project_name + '_' + new_number + self.appendix + '.' + self.extension
+
+            if path.exists(next_profile):
+                global file_name_velo
+                file_name_velo = self.folder + '/' + self.project_name + '_' + new_number + self.appendix + '.' + self.extension
+                self.file = file_name_velo
+                self.open_file(self.file)
+
+            else:
+                if c <= 10:
+                    c += 1
+                    open_next(c)
+
+        open_next(c)
+
+        self.plot_saved_model()
+
+    def previous_profile(self):
+        c = 1
+
+        def open_previous(c):
+            new_number = format((int(self.line_nr) - c), "03d")
+            next_profile = self.folder + '/' + self.project_name + '_' + new_number + self.appendix + '.' + self.extension
+
+            if path.exists(next_profile):
+                global file_name_velo
+                file_name_velo = self.folder + '/' + self.project_name + '_' + new_number + self.appendix + '.' + self.extension
+                self.file = file_name_velo
+                self.open_file(self.file)
+            else:
+                if c <= 10:
+                    c += 1
+                    open_previous(c)
+
+        open_previous(c)
+
+        self.plot_saved_model()
 
