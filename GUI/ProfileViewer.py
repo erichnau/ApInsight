@@ -121,8 +121,8 @@ class MalaRd7(Frame, object):
 
         self.toolbar.pack(side=tk.TOP)
 
-        # self.fig_canvas.mpl_connect("key_press_event", lambda event: print(f"you pressed {event.key}"))
-        # self.fig_canvas.mpl_connect("key_press_event", key_press_handler)
+        #self.fig_canvas.mpl_connect("key_press_event", lambda event: print(f"you pressed {event.key}"))
+        #self.fig_canvas.mpl_connect("key_press_event", key_press_handler)
 
         try:
             if file_name_velo:

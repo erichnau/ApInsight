@@ -24,13 +24,23 @@ class TopFrameToolsVelocity(tk.Frame):
 
         self.velo_model = []
 
+
     def create_widgets(self):
+        frame_height = 50  # Set a fixed height for all frames
+
+        # Configure grid rows and columns to have fixed heights
+        self.grid_rowconfigure(0, minsize=frame_height)
+        self.grid_rowconfigure(1, minsize=frame_height)
+
         # First row - first frame for file operations
         file_operations_frame = tk.Frame(self, highlightcolor='black', borderwidth=1, relief='solid', pady=5, padx=5)
-        file_operations_frame.grid(row=0, column=0, padx=10, pady=5, sticky="w")
+        file_operations_frame.grid(row=0, column=0, padx=10, pady=5, sticky="nsew")
 
         self.button_open = tk.Button(file_operations_frame, text='Open file', command=self.open_file)
         self.button_open.pack(side="left", padx=5, pady=5)
+
+        self.button_exit = tk.Button(file_operations_frame, text='Exit', command=self.exit_viewer)
+        self.button_exit.pack(side="left", padx=5, pady=5)
 
         self.previous_file = tk.Button(file_operations_frame, text='Previous', command=self.previous_profile)
         self.previous_file.pack(side="left", padx=5, pady=5)
@@ -38,28 +48,25 @@ class TopFrameToolsVelocity(tk.Frame):
         self.next_file = tk.Button(file_operations_frame, text='Next', command=self.next_profile)
         self.next_file.pack(side="left", padx=5, pady=5)
 
-        self.button_exit = tk.Button(file_operations_frame, text='Exit', command=self.exit_viewer)
-        self.button_exit.pack(side="left", padx=5, pady=5)
-
         # First row - second frame for project and line labels
         project_frame = tk.Frame(self, highlightcolor='black', borderwidth=1, relief='solid', pady=5, padx=5)
-        project_frame.grid(row=0, column=1, padx=10, pady=5, sticky="e")
+        project_frame.grid(row=0, column=1, padx=10, pady=5, sticky="nsew")
 
         self.project_label = tk.Label(project_frame, text='Project: ', font=('Arial', 11, 'bold'))
         self.project_label.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.project_label2 = tk.Label(project_frame, text='no file', font=('Arial', 11, 'bold'))
+        self.project_label2 = tk.Label(project_frame, text='no file opened', font=('Arial', 11))
         self.project_label2.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.line_label = tk.Label(project_frame, text=', Line nr.: ', font=('Arial', 11, 'bold'))
+        self.line_label = tk.Label(project_frame, text='    Line nr.: ', font=('Arial', 11, 'bold'))
         self.line_label.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.line_label2 = tk.Label(project_frame, text='no file', font=('Arial', 11, 'bold'))
+        self.line_label2 = tk.Label(project_frame, text='no file opened', font=('Arial', 11))
         self.line_label2.pack(side=tk.LEFT, padx=5, pady=5)
 
-        # Second row - first frame for zoom and pan buttons
+        # Second row - first frame for zoom, pan, and contrast buttons
         zoom_pan_frame = tk.Frame(self, highlightcolor='black', borderwidth=1, relief='solid', pady=5, padx=5)
-        zoom_pan_frame.grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        zoom_pan_frame.grid(row=1, column=0, padx=10, pady=5, sticky="nsew")
 
         self.home = tk.Button(zoom_pan_frame, text='Zoom to full extent', command=self.callback_home)
         self.home.pack(side=tk.LEFT, padx=5, pady=5)
@@ -76,14 +83,24 @@ class TopFrameToolsVelocity(tk.Frame):
         self.pan_button = tk.Button(zoom_pan_frame, image=self.pan_photo, command=self.toggle_pan)
         self.pan_button.pack(side=tk.LEFT, padx=5, pady=5)
 
+        # Add contrast controls to the zoom_pan_frame
+        self.label_contrast = tk.Label(zoom_pan_frame, text='Contrast')
+        self.label_contrast.pack(side=tk.LEFT, padx=5, pady=5)
+
+        self.button_increase_contrast = tk.Button(zoom_pan_frame, text='+', command=self.increase_contrast)
+        self.button_increase_contrast.pack(side=tk.LEFT, padx=2, pady=2)
+
+        self.button_decrease_contrast = tk.Button(zoom_pan_frame, text='-', command=self.decrease_contrast)
+        self.button_decrease_contrast.pack(side=tk.LEFT, padx=2, pady=2)
+
         # Second row - second frame for velocity analysis and model buttons
         velo_frame = tk.Frame(self, highlightcolor='black', borderwidth=1, relief='solid', pady=5, padx=5)
-        velo_frame.grid(row=1, column=1, padx=10, pady=5, sticky="e")
+        velo_frame.grid(row=1, column=1, padx=10, pady=5, sticky="nsew")
 
         self.velo_analysis = tk.IntVar()
         self.velo_checkbutton = tk.Checkbutton(velo_frame, variable=self.velo_analysis, text='Velocity Analysis',
                                                onvalue=1, offvalue=0, command=self.velo_bindings,
-                                               font=('Arial', 11, 'bold'))
+                                               font=('Arial', 11))
         self.velo_checkbutton.pack(side=tk.LEFT, padx=5, pady=5)
 
         self.velocity_label = tk.Label(velo_frame, text='Velocity:', font=('Arial', 11))
