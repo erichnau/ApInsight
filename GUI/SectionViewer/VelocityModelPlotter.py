@@ -41,6 +41,10 @@ class VelocityModelPlot:
         self.ax.plot(df.x, df['median'], color='black', alpha=0.7, linewidth=1.5)
         self.ax.scatter(velo_for_plot_x, velo_for_plot_y, facecolors='blue', edgecolors='0', s=5, lw=1)
 
+        # Add labels to the axes
+        self.ax.set_xlabel("Time (ns)")
+        self.ax.set_ylabel("Velocity (m/ns)")
+
         # Create a canvas to embed the plot
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_window)
         self.canvas.draw()
@@ -55,3 +59,5 @@ class VelocityModelPlot:
                                                  filetypes=[("PNG files", "*.png"), ("All files", "*.*")])
         if file_path:
             self.fig.savefig(file_path)
+        self.plot_window.lift()
+
