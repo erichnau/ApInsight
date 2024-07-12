@@ -40,9 +40,6 @@ class SectionView(tk.Toplevel):
         # Additional adjustment to ensure window is at the exact position
         self.geometry(f"{window_width}x{window_height}+0+0")
 
-        # Print debug statements
-        print(f"Window geometry: {self.geometry()}")  # Print the geometry to verify
-
         self.resizable(False, False)
         self.protocol("WM_DELETE_WINDOW", self.cleanup)
 
@@ -80,7 +77,7 @@ class SectionView(tk.Toplevel):
         self.frame_left.set_top_frame_tools(self.tf)
 
     def create_top_frame_velocity(self):
-        self.tf = TopFrameToolsVelocity(self, self.display_gpr_data, self.velo_pan, self.velo_zoom, self.velo_home)
+        self.tf = TopFrameToolsVelocity(self, self.display_gpr_data, self.velo_pan, self.velo_zoom, self.velo_home, self.velo_save_image)
         self.tf.pack(side='top', fill='x')
 
     def velo_home(self):
@@ -91,6 +88,10 @@ class SectionView(tk.Toplevel):
 
     def velo_pan(self):
         self.section_canvas.velo_pan()
+
+    def velo_save_image(self):
+        self.section_canvas.velo_save_image()
+        self.lift()
 
     def display_gpr_data(self, data, info, vmax, vmin):
         self.section_canvas.display_gpr_data(data, info, vmax, vmin)

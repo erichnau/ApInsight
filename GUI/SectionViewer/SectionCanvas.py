@@ -131,6 +131,9 @@ class SectionCanvas(tk.Canvas):
     def velo_zoom(self):
         self.toolbar.zoom()
 
+    def velo_save_image(self):
+        self.toolbar.save_figure()
+
     def velo_click(self, event):
         if self.tf.velo_analysis.get() == 1 and event.button == MouseButton.LEFT:
             self.velo_click_flag = True
@@ -160,7 +163,7 @@ class SectionCanvas(tk.Canvas):
         k = np.sqrt(d ** 2 + np.power(x, 2)) - (d - d2)
         t2 = 2 * k / v
 
-        self.hyperbola = self.ax.plot(self.profilePos, t2, '--g', linewidth=1)
+        self.hyperbola = self.ax.plot(self.profilePos, t2, '--r', linewidth=1)
         self.canvas.draw()
 
     def start_pan(self, event):
