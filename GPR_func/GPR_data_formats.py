@@ -186,6 +186,9 @@ def read_par(file_name):
 def read_dat(file_name):
     """
     Reads the ReflexW data file .dat and the .par header.
+
+    Added a check to make sure that the output data falls within the 16-bit signed integer
+
     INPUT:
     file_name     data file name without the extension!
     OUTPUT:
@@ -195,6 +198,10 @@ def read_dat(file_name):
 
     filename = file_name + '.dat'
     gpr_data = np.fromfile(filename, dtype=np.int16)
+
+    # Verify the data is within the 16-bit signed integer range
+    if np.any(gpr_data < -32767) or np.any(gpr_data > 32766):
+        gpr_data = np.clip(gpr_data, -32767, 32766)
 
     delete_list = []
     x = 0
@@ -212,6 +219,5 @@ def read_dat(file_name):
     data_ex = np.delete(gpr_data, delete_list_final)
 
     data = np.asmatrix(data_ex.reshape(nr_traces, nr_sample)).T
-
 
     return data
