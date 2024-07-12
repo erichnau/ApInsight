@@ -25,6 +25,7 @@ class TopFrameToolsVelocity(tk.Frame):
         self.tooltip_bindings = {} # Initialize tooltip_bindings here
         self.annotations = []
         self.velo_points = []
+        self.project_name = None
 
         self.create_widgets()
 
@@ -172,17 +173,28 @@ class TopFrameToolsVelocity(tk.Frame):
         self.callback_display_data(data, info, vmax, vmin)
         self.activate_buttons()
 
-        self.folder = file_path[:file_path.rfind('/')]  # [:-31] to get main folder(after #)
+        self.folder = file_path[:file_path.rfind('/')]
 
         proj_name_temp = file_path[file_path.rfind('/') + 1:]
         ind1 = proj_name_temp.rfind('_')
         temp_1 = proj_name_temp[:proj_name_temp.rfind('_')]
         ind2 = temp_1.rfind('_')
 
-        self.line_nr = proj_name_temp[:ind1][ind2 + 1:]
-        self.project_name = proj_name_temp[:ind1][:ind2]
-        self.appendix = proj_name_temp[ind1:].rsplit('.')[0]
-        self.extension = proj_name_temp[ind1:].rsplit('.')[1]
+        new_line_nr = proj_name_temp[:ind1][ind2 + 1:]
+        new_project_name = proj_name_temp[:ind1][:ind2]
+        new_appendix = proj_name_temp[ind1:].rsplit('.')[0]
+        new_extension = proj_name_temp[ind1:].rsplit('.')[1]
+
+        # Check if the project name has changed
+        if new_project_name != self.project_name:
+            self.velo_model = []  # Reset the velocity model
+            self.plot_velo_model.config(state='disabled')
+            self.save_velo_model.config(state='disabled')
+
+        self.line_nr = new_line_nr
+        self.project_name = new_project_name
+        self.appendix = new_appendix
+        self.extension = new_extension
 
         self.project_label2.config(text=self.project_name)
         self.line_label2.config(text=self.line_nr)
@@ -208,6 +220,9 @@ class TopFrameToolsVelocity(tk.Frame):
 
     def activate_plot(self):
         self.plot_velo_model.config(state='normal')
+
+    def activate_save(self):
+        self.save_velo_model.config(state='normal')
 
 
     def toggle_pan(self):
@@ -255,8 +270,7 @@ class TopFrameToolsVelocity(tk.Frame):
     def velo_bindings(self):
         if self.velo_analysis.get() == 1:
             self.velo_analysis.set(1)
-            self.section_canvas.canvas.mpl_connect('button_press_event', self.section_canvas.velo_click)
-            self.section_canvas.canvas.mpl_connect('button_release_event', self.section_canvas.velo_release)
+            self.section_canvas.canvas.mpl_connect('button_press_event', self.section_canvas.on_click)
 
             if platform.system() == 'Windows':
                 self.section_canvas.bind_all("<MouseWheel>", self.on_mouse_wheel)
@@ -265,6 +279,7 @@ class TopFrameToolsVelocity(tk.Frame):
                 self.bind_all("<Button-5>", self.on_mouse_wheel)
 
             self.bind_all("<space>", self.add_velocity_to_model)
+            self.bind_all("<Delete>", self.section_canvas.delete_selected_point)
 
         elif self.velo_analysis.get() == 0:
             self.velo_analysis.set(0)
@@ -278,6 +293,7 @@ class TopFrameToolsVelocity(tk.Frame):
                 self.unbind_all("<Button-5>")
 
             self.unbind_all("<space>")
+            self.unbind_all("<Delete>")
 
     def increase_velo(self):
         speed_of_light_m_ns = 0.299792458  # Speed of light in m/ns
@@ -329,13 +345,11 @@ class TopFrameToolsVelocity(tk.Frame):
         if event.num == 4 or event.delta == 120:
             self.increase_velo()
 
-
-    def point_exists_in_model(self, x, y, velo):
-        for value in self.velo_model:
+    def point_exists_in_model(self, x, y):
+        for index, value in enumerate(self.velo_model):
             if (value[1] == x) and (value[2] == y):
-                return True
-        return False
-
+                return True, index
+        return False, -1
 
     def add_velocity_to_model(self, event=None):
         velo_value = []
@@ -344,42 +358,82 @@ class TopFrameToolsVelocity(tk.Frame):
             remove_hyp = self.section_canvas.hyperbola.pop(0)
             remove_hyp.remove()
 
-            # Get the current point
-            current_x = round(self.section_canvas.x, 3)
-            current_y = round(self.section_canvas.y, 3)
-            current_velo = self.velo_value.get()
+        # Get the current point
+        current_x = round(self.section_canvas.x, 3)
+        current_y = round(self.section_canvas.y, 3)
+        current_velo = self.velo_value.get()
 
-            # Check if the point already exists in the model
-            if self.point_exists_in_model(current_x, current_y, current_velo):
-                print('Point already exists in the model.')
+        if self.section_canvas.selected_point:
+            if self.update_existing_point(current_x, current_y, current_velo):
                 return
 
-            # Add the point to the model
-            velo_point, = self.section_canvas.ax.plot(self.section_canvas.x, self.section_canvas.y,
-                                                      marker="o", markersize=5, markeredgecolor="red",
-                                                      markerfacecolor="red")
-            label = current_velo + ' m/ns'
-            annotation = self.section_canvas.ax.annotate(label, (self.section_canvas.x, self.section_canvas.y),
-                                                         textcoords="offset points", xytext=(0, 10), ha='center')
+        # Add the point to the model
+        velo_point, = self.section_canvas.ax.plot(self.section_canvas.x, self.section_canvas.y,
+                                                  marker="o", markersize=5, markeredgecolor="red",
+                                                  markerfacecolor="red")
+        label = current_velo + ' m/ns'
+        annotation = self.section_canvas.ax.annotate(label, (self.section_canvas.x, self.section_canvas.y),
+                                                     textcoords="offset points", xytext=(0, 10), ha='center')
 
-            self.annotations.append(annotation)
-            self.velo_points.append(velo_point)
+        self.annotations.append(annotation)
+        self.velo_points.append((velo_point, current_velo, annotation))  # Store the point, velocity, and annotation
 
-            velo_value.append(self.line_nr)
-            velo_value.append(current_x)
-            velo_value.append(current_y)
-            velo_value.append(current_velo)
+        velo_value.append(self.line_nr)
+        velo_value.append(current_x)
+        velo_value.append(current_y)
+        velo_value.append(current_velo)
 
-            self.velo_model.append(velo_value)
+        self.velo_model.append(velo_value)
 
-            self.section_canvas.canvas.draw()
-            if len(self.velo_model) >= 2:
-                self.activate_plot()
+        self.section_canvas.canvas.draw()
+        if len(self.velo_model) >= 1:
+            self.activate_save()
+        if len(self.velo_model) >= 2:
+            self.activate_plot()
 
+    def update_existing_point(self, current_x, current_y, current_velo):
+        for point, velo, annotation in self.velo_points:
+            # Find the selected point in the list
+            if point == self.section_canvas.selected_point:
+                # Check if the velocity value has changed
+                if velo != current_velo:
+                    # Remove the point and annotation
+                    point.remove()
+                    annotation.remove()
+
+                    # Remove the point from the list
+                    self.velo_points.remove((point, velo, annotation))
+
+                    # Add the updated point and annotation
+                    velo_point, = self.section_canvas.ax.plot(current_x, current_y,
+                                                              marker="o", markersize=5, markeredgecolor="red",
+                                                              markerfacecolor="red")
+                    label = current_velo + ' m/ns'
+                    annotation = self.section_canvas.ax.annotate(label, (current_x, current_y),
+                                                                 textcoords="offset points", xytext=(0, 10),
+                                                                 ha='center')
+
+                    self.annotations.append(annotation)
+                    self.velo_points.append((velo_point, current_velo, annotation))
+
+                    for value in self.velo_model:
+                        if float(value[1]) == current_x and float(value[2]) == current_y:
+                            self.velo_model.remove(value)  # Remove the old value
+                            break
+
+                    velo_value = [self.line_nr, current_x, current_y, current_velo]
+                    self.velo_model.append(velo_value)
+
+                    self.section_canvas.canvas.draw()
+                    print('Velocity value updated for the selected point.')
+                    return True
+                else:
+                    print('Selected point already has the same velocity value.')
+                    return True
+        return False
 
     def plot_velocity_model(self):
         VelocityModelPlot(self.master, self.velo_model)
-
 
     def save_velocity_model(self):
         default_filename = self.project_name + '_Velocity_model.txt'
@@ -398,29 +452,37 @@ class TopFrameToolsVelocity(tk.Frame):
 
         f.close()
 
-        f = open(file, 'a')
+        # Check if there are enough data points to perform binning
+        if len(self.velo_model) >= 6:
+            velo_for_plot_x = []
+            velo_for_plot_y = []
 
-        f.write('\n')
-        f.write('Median' + '\n')
+            for element in self.velo_model:
+                velo_for_plot_x.append(float(element[2]))
+                velo_for_plot_y.append(float(element[3]))
 
-        velo_for_plot_x = []
-        velo_for_plot_y = []
+            x = np.array(velo_for_plot_x)
+            y = np.array(velo_for_plot_y)
 
-        for element in self.velo_model:
-            velo_for_plot_x.append(float(element[2]))
-            velo_for_plot_y.append(float(element[3]))
+            try:
+                # bin the values and determine the envelopes
+                df = bin_by(x, y, nbins=6, bins=None)
+                df_x_as_string = df.x.to_string(header=False, index=False).strip().split('\n')
+                df_median_as_string = df['median'].to_string(header=False, index=False).strip().split('\n')
 
-        x = np.array(velo_for_plot_x)
-        y = np.array(velo_for_plot_y)
+                f = open(file, 'a')
+                f.write('\n')
+                f.write('Median' + '\n')
 
-        # bin the values and determine the envelopes
-        df = bin_by(x, y, nbins=6, bins=None)
-        df_x_as_string = df.x.to_string(header=False, index=False).strip().split('\n')
-        df_median_as_string = df['median'].to_string(header=False, index=False).strip().split('\n')
-        for i in range(len(df_x_as_string) - 1):
-            f.write(df_x_as_string[i] + ',' + df_median_as_string[i] + '\n')
+                for i in range(len(df_x_as_string) - 1):
+                    f.write(df_x_as_string[i] + ',' + df_median_as_string[i] + '\n')
 
-        f.close()
+                f.close()
+            except IndexError:
+                # Handle the case where binning fails due to insufficient data points
+                print("Not enough data points for binning. Saving individual velocity values only.")
+        else:
+            print("Not enough data points for binning. Saving individual velocity values only.")
 
     def load_velocity_model(self):
         fileformat = [('GPR velocity model', '*.txt')]
@@ -453,31 +515,36 @@ class TopFrameToolsVelocity(tk.Frame):
 
         self.plot_saved_model()
         self.activate_plot()
-
+        self.activate_save()
 
     def plot_saved_model(self):
+        # Remove any existing hyperbola
         if hasattr(self.section_canvas, 'hyperbola') and self.section_canvas.hyperbola:
             remove_hyp = self.section_canvas.hyperbola.pop(0)
             remove_hyp.remove()
 
-        while self.velo_points:
-            velo_point = self.velo_points.pop()
-            velo_point.remove()
+        # Remove all previous points and annotations from the canvas and lists
+        if hasattr(self, 'velo_points') and self.velo_points:
+            for point, _, annotation in self.velo_points:
+                point.remove()
+                annotation.remove()
+            self.velo_points.clear()
 
-        # Remove annotations
-        while self.annotations:
-            annotation = self.annotations.pop()
-            annotation.remove()
+        self.annotations.clear()
 
+        # Plot the loaded model
         for entry in self.velo_model:
             if entry[0] == self.line_nr:
-                self.section_canvas.point = self.section_canvas.ax.plot(float(entry[1]), float(entry[2]), marker="o", markersize=5,
-                                             markeredgecolor="red",
-                                             markerfacecolor="red")
+                velo_point, = self.section_canvas.ax.plot(float(entry[1]), float(entry[2]), marker="o", markersize=5,
+                                                          markeredgecolor="red", markerfacecolor="red")
                 label = entry[3] + ' m/ns'
-                self.section_canvas.ax.annotate(label, (float(entry[1]), float(entry[2])), textcoords="offset points", xytext=(0, 10),
-                             ha='center')
+                annotation = self.section_canvas.ax.annotate(label, (float(entry[1]), float(entry[2])),
+                                                             textcoords="offset points", xytext=(0, 10), ha='center')
 
+                self.annotations.append(annotation)
+                self.velo_points.append((velo_point, entry[3], annotation))
+
+        # Redraw the canvas to update the changes
         self.section_canvas.canvas.draw()
 
     def next_profile(self):

@@ -3,7 +3,6 @@ from PIL import Image, ImageTk
 import numpy as np
 from tkinter import messagebox
 import matplotlib as mpl
-from matplotlib import pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 from matplotlib.backend_bases import MouseButton
@@ -37,6 +36,8 @@ class SectionCanvas(tk.Canvas):
 
         self.x_axis = None
         self.mask_tag = None
+
+        self.selected_point = None
 
         self.y_labels = []  # list to store y-axis labels
         self.x_labels = []  # list to store x-axis labels
@@ -134,29 +135,81 @@ class SectionCanvas(tk.Canvas):
     def velo_save_image(self):
         self.toolbar.save_figure()
 
+    def on_click(self, event):
+        point_selected = False  # Variable to track if a point was selected
+
+        if self.tf.velo_points:
+            for point, velo, annotation in self.tf.velo_points:
+                contains, _ = point.contains(event)
+                if contains:
+                    # Deselect the previously selected point
+                    if self.selected_point is not None:
+                        self.selected_point.set_markerfacecolor('red')
+                        self.selected_point.set_markeredgecolor('red')
+
+                    # Select the new point
+                    point.set_markerfacecolor('green')
+                    point.set_markeredgecolor('green')
+                    self.tf.velo_value.delete(0, 'end')
+                    self.tf.velo_value.insert(tk.INSERT, velo)  # Update the entry with the selected point's velocity
+
+                    # Remove the previous hyperbola
+                    if hasattr(self, 'hyperbola') and self.hyperbola:
+                        remove_hyp = self.hyperbola.pop(0)
+                        remove_hyp.remove()
+
+                    # Plot a new hyperbola at the selected point
+                    self.x = float(point.get_xdata())
+                    self.y = float(point.get_ydata())
+                    self.plot_hyperbola()
+
+                    self.canvas.draw()
+                    self.velo_point_selected = True
+                    self.selected_point = point
+                    self.selected_annotation = annotation  # Store the selected annotation
+                    point_selected = True  # A point was selected
+                    break  # Exit the loop once a point is selected
+
+        # If no point was selected, call the velo_click method
+        if not point_selected:
+            # Deselect the previously selected point if no point was clicked
+            if self.selected_point is not None:
+                self.selected_point.set_markerfacecolor('red')
+                self.selected_point.set_markeredgecolor('red')
+                self.selected_point = None
+                self.canvas.draw()
+
+            # Call the velo_click method
+            self.canvas.mpl_connect('button_press_event', self.velo_release)
+            self.velo_point_selected = False
+            self.velo_click(event)
+
     def velo_click(self, event):
         if self.tf.velo_analysis.get() == 1 and event.button == MouseButton.LEFT:
             self.velo_click_flag = True
             self.click_time = time.time()
 
     def velo_release(self, event):
-        if self.tf.velo_analysis.get() == 1 and event.button == MouseButton.LEFT:
-            release_time = time.time()
-            click_duration = release_time - self.click_time
-            self.velo_click_flag = False
+        if self.velo_point_selected == False:
+            if self.tf.velo_analysis.get() == 1 and event.button == MouseButton.LEFT:
+                release_time = time.time()
+                click_duration = release_time - self.click_time
+                self.velo_click_flag = False
 
-            if click_duration < 0.2:  # Adjust the duration threshold as needed
-                self.x = event.xdata
-                self.y = event.ydata
-                self.plot_hyperbola()
+                if click_duration < 0.2:  # Adjust the duration threshold as needed
+                    self.x = event.xdata
+                    self.y = event.ydata
+                    self.plot_hyperbola()
+        else:
+            return
 
-    def plot_hyperbola(self):
+    def plot_hyperbola(self, velocity=None):
         if hasattr(self, 'hyperbola') and self.hyperbola:
             remove_hyp = self.hyperbola.pop(0)
             remove_hyp.remove()
 
         x = self.profilePos - self.x
-        v = float(self.tf.velo_value.get())
+        v = float(self.tf.velo_value.get()) if velocity is None else float(velocity)
         d = sqrt((v * float(self.y) / 2.0) ** 2 + (self.antenna_separation / 2) ** 2)
         d2 = v * float(self.y) / 2.0
 
@@ -165,6 +218,35 @@ class SectionCanvas(tk.Canvas):
 
         self.hyperbola = self.ax.plot(self.profilePos, t2, '--r', linewidth=1)
         self.canvas.draw()
+
+    def delete_selected_point(self, event):
+        if self.selected_point is not None:
+            # Remove the selected point from the canvas
+            self.selected_point.remove()
+
+            # Remove the associated annotation
+            if self.selected_annotation is not None:
+                self.selected_annotation.remove()
+
+            # Remove the associated hyperbola
+            if hasattr(self, 'hyperbola') and self.hyperbola:
+                remove_hyp = self.hyperbola.pop(0)
+                remove_hyp.remove()
+
+            # Remove the selected point from the list of velocity points
+            self.tf.velo_points = [(point, velo, annotation) for point, velo, annotation in self.tf.velo_points if
+                                   point != self.selected_point]
+
+            for value in self.tf.velo_model:
+                if (float(value[1]) == round(self.selected_point.get_xdata()[0], 3)) and (float(
+                        value[2]) == round(self.selected_point.get_ydata()[0], 3)):
+                    self.tf.velo_model.remove(value)
+                    break
+
+            # Clear the selected point and annotation
+            self.selected_point = None
+            self.selected_annotation = None
+            self.canvas.draw()
 
     def start_pan(self, event):
         self.init_image_position = (event.x, event.y)
