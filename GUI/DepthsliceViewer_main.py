@@ -166,7 +166,7 @@ class MenuBuilder:
         helpmenu.add_command(label='Info', command=self.show_info)
 
         menubar.add_cascade(label="File", menu=filemenu)
-        menubar.add_cascade(label="View", menu=viewmenu)
+        menubar.add_cascade(label="Tools", menu=viewmenu)
         menubar.add_cascade(label='Help', menu=helpmenu)
 
     def show_info(self):
