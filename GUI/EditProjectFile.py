@@ -571,7 +571,7 @@ class ProjectGUI(Frame, object):
 
                 # Use the compiled executable function if not containing "DTM" and the compiled exe is to be used
                 if self.use_compiled_exe:
-                    _, _, _, self.zpixels, _, _, _, self.pixelsize_z, _, _, _ = read_fld.define_fld_parameters_cpp(entry, self.master, self.results_window, progress_window, overwrite=True)
+                    _, _, _, self.zpixels, _, _, _, self.pixelsize_z, _, _, _ = read_fld.define_fld_parameters_cpp(entry, overwrite=True)
                     if self.zpixels == None:
                         progress_window.destroy()
                         return

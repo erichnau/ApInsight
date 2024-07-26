@@ -8,9 +8,18 @@ from rasterio.transform import from_origin
 from cpp_fld_to_npy import fld_to_npy
 from GUI.error_handling import confirm_python_processing
 
-def define_fld_parameters_cpp(file_path, root=None, w1=None, w2=None, overwrite=False):
+def define_fld_parameters_cpp(file_path, overwrite=False):
     base_name = os.path.splitext(file_path)[0]  # Get the path without the extension
     output_npy = base_name + '.npy'
+
+    if not os.path.exists(output_npy) or overwrite:
+        print('Using C++ version for processing.')
+        fld_to_npy.process_fld_with_cpp(file_path, output_npy)
+        print('FLD preprocessed.')
+    else:
+        print(f"File {output_npy} already exists. Skipping...")
+
+    fld_data = np.load(output_npy, mmap_mode='r')
 
     with open(file_path, mode='rb') as f:
         file_content = f.read()
@@ -18,44 +27,8 @@ def define_fld_parameters_cpp(file_path, root=None, w1=None, w2=None, overwrite=
     xpixels, ypixels, zpixels, pixelsize, x_coor, y_coor, pixelsize_z = read_fld_header(file_content)
     data_start, data_type, pixelsize_z, depth_table, time_table, _ = read_fld_data_specs(file_content, zpixels)
 
-    expected_filesize = get_expected_npy_size(xpixels, ypixels, zpixels)
-
-    if not os.path.exists(output_npy):
-        if expected_filesize > 7000000000:
-            response = confirm_python_processing(root, expected_filesize)
-            root.lift()
-            w1.lift()
-            w2.lift()
-            if response:
-                start_bits, stop_bits, number_of_values = get_start_stop_bits(file_content, zpixels, data_start)
-                read_fld_with_threads(file_content, xpixels, ypixels, zpixels, start_bits, stop_bits,
-                                  number_of_values, output_npy)
-            else:
-                print('User chose not to continue, aborting processing')
-                return None, None, None, None, None, None, None, None, None, None, None
-        else:
-            fld_to_npy.process_fld_with_cpp(file_path, output_npy)
-    else:
-        if overwrite:
-            if expected_filesize > 7000000000:
-                response = confirm_python_processing(root, expected_filesize)
-                w1.lift()
-                w2.lift()
-                if response:
-                    start_bits, stop_bits, number_of_values = get_start_stop_bits(file_content, zpixels, data_start)
-                    read_fld_with_threads(file_content, xpixels, ypixels, zpixels, start_bits, stop_bits,
-                                          number_of_values, output_npy)
-                else:
-                    print('User chose not to continue, aborting processing')
-            else:
-                fld_to_npy.process_fld_with_cpp(file_path, output_npy)
-            print('Fld preprocesed')
-        else:
-            print(f"File {output_npy} already exists. Skipping...")
-
-    fld_data = np.load(output_npy, mmap_mode='r')
-
     return fld_data, xpixels, ypixels, zpixels, pixelsize, x_coor, y_coor, pixelsize_z, data_type, depth_table, time_table
+
 
 def get_expected_npy_size(x, y, z):
     x = np.int64(x)
