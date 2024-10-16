@@ -1,10 +1,10 @@
 import tkinter as tk
 from tkinter import filedialog
 import os
+from os import path
 import numpy as np
 from PIL import Image, ImageTk
 import platform
-from os import path
 
 import GPR_func.GPR_data_formats as gpr
 from GPR_func.GPR_proc import bin_by
@@ -181,6 +181,7 @@ class TopFrameToolsVelocity(tk.Frame):
         ind2 = temp_1.rfind('_')
 
         new_line_nr = proj_name_temp[:ind1][ind2 + 1:]
+        self.line_nr_digits = len(new_line_nr)  # Store the length of the line number
         new_project_name = proj_name_temp[:ind1][:ind2]
         new_appendix = proj_name_temp[ind1:].rsplit('.')[0]
         new_extension = proj_name_temp[ind1:].rsplit('.')[1]
@@ -191,13 +192,13 @@ class TopFrameToolsVelocity(tk.Frame):
             self.plot_velo_model.config(state='disabled')
             self.save_velo_model.config(state='disabled')
 
-        self.line_nr = new_line_nr
+        self.line_nr = int(new_line_nr)  # Convert the line number to an integer
         self.project_name = new_project_name
         self.appendix = new_appendix
         self.extension = new_extension
 
         self.project_label2.config(text=self.project_name)
-        self.line_label2.config(text=self.line_nr)
+        self.line_label2.config(text=str(self.line_nr).zfill(self.line_nr_digits))
 
         self.master.lift()
 
@@ -551,15 +552,12 @@ class TopFrameToolsVelocity(tk.Frame):
         c = 1
 
         def open_next(c):
-            new_number = format((int(self.line_nr) + c), "03d")
-            next_profile = self.folder + '/' + self.project_name + '_' + new_number + self.appendix + '.' + self.extension
+            new_number = format((self.line_nr + c), f"0{self.line_nr_digits}d")  # Format using line_nr_digits
+            next_profile = f"{self.folder}/{self.project_name}_{new_number}{self.appendix}.{self.extension}"
 
             if path.exists(next_profile):
-                global file_name_velo
-                file_name_velo = self.folder + '/' + self.project_name + '_' + new_number + self.appendix + '.' + self.extension
-                self.file = file_name_velo
+                self.file = next_profile
                 self.open_file(self.file)
-
             else:
                 if c <= 10:
                     c += 1
@@ -573,13 +571,11 @@ class TopFrameToolsVelocity(tk.Frame):
         c = 1
 
         def open_previous(c):
-            new_number = format((int(self.line_nr) - c), "03d")
-            next_profile = self.folder + '/' + self.project_name + '_' + new_number + self.appendix + '.' + self.extension
+            new_number = format((self.line_nr - c), f"0{self.line_nr_digits}d")  # Format using line_nr_digits
+            next_profile = f"{self.folder}/{self.project_name}_{new_number}{self.appendix}.{self.extension}"
 
             if path.exists(next_profile):
-                global file_name_velo
-                file_name_velo = self.folder + '/' + self.project_name + '_' + new_number + self.appendix + '.' + self.extension
-                self.file = file_name_velo
+                self.file = next_profile
                 self.open_file(self.file)
             else:
                 if c <= 10:
