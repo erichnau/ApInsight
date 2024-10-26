@@ -7,10 +7,8 @@ import shapefile
 
 
 from GUI.error_handling import show_error_dialog
-from GUI._3DViewer import _3DViewer
 from GPR_func._2D_vertical import check_section_array
 
-#from GUI.SectionViewer_old import SectionView
 from GUI.SectionViewer.SectionView import SectionView
 from data.ProjectData import ArbSectionData
 
@@ -33,7 +31,6 @@ class RightFrame(Frame):
         self.section_count = 1
         self.total_section_count = 1
 
-        self.rectangle_data ={}
 
         self.section_view_window = None
         self.section_view_active = False
@@ -77,7 +74,6 @@ class RightFrame(Frame):
         # Canvas Section (Unchanged)
         self.add_section_canvas()
 
-        self.add_rectangle_frame()
 
     def get_default_bg_color(self, master):
         """ Get the default system background color. """
@@ -136,86 +132,6 @@ class RightFrame(Frame):
         buttons_frame.grid_columnconfigure(0, weight=1)
         buttons_frame.grid_columnconfigure(1, weight=1)
 
-    def add_rectangle_frame(self):
-        # Button Frame for Rectangle Buttons
-        rectangle_buttons_frame = tk.Frame(self)
-        rectangle_buttons_frame.pack(side='top', fill='x', padx=5, pady=5)
-
-        # Show 3D Data Button
-        self.show_3d_data_button = tk.Button(rectangle_buttons_frame, text="Show 3D Data", command=self.show_3d_data,
-                                             state='disabled', fg="black")
-        self.show_3d_data_button.grid(row=0, column=0, padx=5, pady=5, sticky='ew')
-
-        # Clear Rectangle Button
-        self.clear_rectangle_button = tk.Button(rectangle_buttons_frame, text="Clear Rectangle",
-                                                command=self.clear_rectangle,
-                                                state='disabled', fg="black")
-        self.clear_rectangle_button.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
-
-        rectangle_buttons_frame.grid_columnconfigure(0, weight=1)
-        rectangle_buttons_frame.grid_columnconfigure(1, weight=1)
-
-        # Canvas Frame for Rectangle Canvas
-        canvas_frame = tk.Frame(self)
-        canvas_frame.pack(side='top', fill='x', pady=5, padx=5)
-
-        # Canvas to display rectangle data
-        self.rectangle_canvas = tk.Canvas(canvas_frame, height=300, width=300, highlightbackground="black",
-                                          highlightthickness=1)
-        self.rectangle_canvas.pack(side='top', padx=5, pady=5, expand=True, fill='both')
-
-    def add_rectangle(self, start_coords, perp_start_coords, perp_stop_coords, stop_coords):
-        self.rectangle_data.clear()
-
-        # Remove existing label frame if it exists
-        if hasattr(self, "label_frame"):
-            self.label_frame.destroy()
-
-        # Create a frame to hold the label
-        self.label_frame = tk.Frame(self.rectangle_canvas, bg="white")
-        self.label_frame.pack()
-
-        # Add a label to the frame
-        label = tk.Label(self.label_frame, text="Rectangle 1", bg="white")
-        label.pack()
-
-        # Prevent resizing of the canvas frame
-        self.rectangle_canvas.pack_propagate(0)
-
-        # Store rectangle corner point information in the dictionary
-        self.rectangle_data = {
-            "start_coords": start_coords,
-            "perp_start_coords": perp_start_coords,
-            "perp_stop_coords": perp_stop_coords,
-            "stop_coords": stop_coords
-        }
-
-        # Enable buttons
-        self.show_3d_data_button.config(state='normal')
-        self.clear_rectangle_button.config(state='normal')
-
-    def show_3d_data(self):
-        data = self.frame_left.get_selected_data()
-        subset = data.fld_file.create_3d_subset(self.rectangle_data)
-        spacing = (data.fld_file.pixelsize_z*10, data.fld_file.pixelsize*10, data.fld_file.pixelsize*10)
-
-        _3DViewer.visualize_3d_data(subset, spacing=spacing)
-
-
-    def clear_rectangle(self):
-        # Disable buttons
-        self.show_3d_data_button.config(state='disabled')
-        self.clear_rectangle_button.config(state='disabled')
-
-        # Remove rectangle from the canvas
-        self.frame_image.canvas.delete("rectangle", 'start_p')
-
-        # Remove label frame if it exists
-        if hasattr(self, "label_frame"):
-            self.label_frame.destroy()
-
-        # Clear rectangle data dictionary
-        self.rectangle_data.clear()
 
     def on_mousewheel(self, event):
         self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
