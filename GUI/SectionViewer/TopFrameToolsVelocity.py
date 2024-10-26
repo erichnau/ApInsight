@@ -535,7 +535,8 @@ class TopFrameToolsVelocity(tk.Frame):
 
         # Plot the loaded model
         for entry in self.velo_model:
-            if entry[0] == self.line_nr:
+            print(int(entry[0]), self.line_nr)
+            if int(entry[0]) == self.line_nr:
                 velo_point, = self.section_canvas.ax.plot(float(entry[1]), float(entry[2]), marker="o", markersize=5,
                                                           markeredgecolor="red", markerfacecolor="red")
                 label = entry[3] + ' m/ns'
@@ -544,9 +545,11 @@ class TopFrameToolsVelocity(tk.Frame):
 
                 self.annotations.append(annotation)
                 self.velo_points.append((velo_point, entry[3], annotation))
+                print(self.velo_points)
 
         # Redraw the canvas to update the changes
         self.section_canvas.canvas.draw()
+
 
     def next_profile(self):
         c = 1

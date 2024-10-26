@@ -180,7 +180,7 @@ class SectionCanvas(tk.Canvas):
                 self.canvas.draw()
 
             # Call the velo_click method
-            self.canvas.mpl_connect('button_press_event', self.velo_release)
+            self.canvas.mpl_connect('button_release_event', self.velo_release)
             self.velo_point_selected = False
             self.velo_click(event)
 
@@ -196,7 +196,7 @@ class SectionCanvas(tk.Canvas):
                 click_duration = release_time - self.click_time
                 self.velo_click_flag = False
 
-                if click_duration < 0.2:  # Adjust the duration threshold as needed
+                if click_duration < 0.1:  # Adjust the duration threshold as needed
                     self.x = event.xdata
                     self.y = event.ydata
                     self.plot_hyperbola()
