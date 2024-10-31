@@ -1,5 +1,7 @@
 import numpy as np
 import pyvista as pv
+import xarray as xr
+
 
 def visualize_3d_data(data, spacing=(1, 1, 1), origin=(0, 0, 0), threshold=30):
     data = data.values
@@ -35,3 +37,9 @@ def visualize_3d_data(data, spacing=(1, 1, 1), origin=(0, 0, 0), threshold=30):
 
     pl.camera_position = cpos
     pl.show()
+
+
+'''data = xr.open_dataset('d:/001_GPR_testdata/test.nc')
+data_array = data["__xarray_dataarray_variable__"]
+
+visualize_3d_data(data_array, spacing=(0.5, 0.5, 0.5))'''
