@@ -290,10 +290,10 @@ class FldData:
 
         # Slice the dataset
         subset_data = self.fld_dset[:, min_y_index:max_y_index + 1, min_x_index:max_x_index + 1]
-        print(self.fld_dset.coords['x'].values, self.fld_dset.coords['y'].values)
         subset_clean = self.clean_subset(subset=subset_data, coordinates=coordinates, x_coords=subset_data.coords['x'].values, y_coords=subset_data.coords['y'].values)
+        data_array_transposed = subset_data.transpose("x", "y", "z")
 
-        return subset_clean
+        return data_array_transposed
 
     def is_point_in_rectangle(self, point, vertices):
         """Check if a point is inside the rectangle using the ray-casting algorithm."""

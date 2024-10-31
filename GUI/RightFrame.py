@@ -4,6 +4,7 @@ import time
 import os
 import re
 import shapefile
+from multiprocessing import Process, set_start_method
 
 
 from GUI.error_handling import show_error_dialog
@@ -14,6 +15,10 @@ from GPR_func._2D_vertical import check_section_array
 from GUI.SectionViewer.SectionView import SectionView
 from data.ProjectData import ArbSectionData
 
+from GUI._3DViewer.VolumeViewer import launch_volume_viewer
+
+# Ensure the spawn method is used for starting processes (required for Windows compatibility)
+set_start_method("spawn", force=True)
 
 class RightFrame(Frame):
     def __init__(self, master, frame_image, frame_left, menu_builder, project_data, *args, **kwargs):
@@ -197,9 +202,15 @@ class RightFrame(Frame):
     def show_3d_data(self):
         data = self.frame_left.get_selected_data()
         subset = data.fld_file.create_3d_subset(self.rectangle_data)
-        spacing = (data.fld_file.pixelsize_z*10, data.fld_file.pixelsize*10, data.fld_file.pixelsize*10)
 
-        _3DViewer.visualize_3d_data(subset, spacing=spacing)
+        #spacing = (data.fld_file.pixelsize_z*10, data.fld_file.pixelsize*10, data.fld_file.pixelsize*10)
+        #_3DViewer.visualize_3d_data(subset, spacing=spacing)
+
+        spacing = (data.fld_file.pixelsize_z, data.fld_file.pixelsize_z, data.fld_file.pixelsize_z)
+
+        # Start the VolumeViewer in a new process, passing the xarray and pixel_size
+        viewer_process = Process(target=launch_volume_viewer, args=(subset, spacing))
+        viewer_process.start()
 
 
     def clear_rectangle(self):
