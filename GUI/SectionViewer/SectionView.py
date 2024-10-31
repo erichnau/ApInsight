@@ -54,8 +54,13 @@ class SectionView(tk.Toplevel):
             self.project_file_path = project_file_path
             self.file_name = self.frame_left.active_file_name
 
+            if 'DTMfromGPR' in self.file_name:
+                topo_corr = True
+            else:
+                topo_corr = False
+
             self.create_temporary_folder(self.mode)
-            self.create_top_frame()
+            self.create_top_frame(topo_corr)
             self.create_widgets()
             self._set_image_canvas()
             self._set_section_window()
@@ -71,8 +76,8 @@ class SectionView(tk.Toplevel):
             self.create_widgets()
             self._set_image_canvas()
 
-    def create_top_frame(self):
-        self.tf = TopFrameTools(self, self.section.section_data)
+    def create_top_frame(self, topo_corr):
+        self.tf = TopFrameTools(self, self.section.section_data, topo_corr)
         self.tf.pack(side="top", fill="x")
         self.frame_left.set_top_frame_tools(self.tf)
 

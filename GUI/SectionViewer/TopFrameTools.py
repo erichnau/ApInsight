@@ -1,11 +1,12 @@
 import tkinter as tk
 from tkinter import Frame, messagebox
+from PIL import Image, ImageTk
 
 from config_manager import ConfigurationManager
 
 
 class TopFrameTools(Frame):
-    def __init__(self, parent, section, *args, **kwargs):
+    def __init__(self, parent, section, topo_corr, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
 
         self.config_manager = ConfigurationManager('config.ini')
@@ -17,6 +18,7 @@ class TopFrameTools(Frame):
 
         self.section = section
         self.topo_corrected = False
+        self.DTMfromGPR = topo_corr
 
         self.create_widgets()
         self.create_zoom_controls()
@@ -32,6 +34,10 @@ class TopFrameTools(Frame):
 
         clear_topo = tk.Button(self, text='Clear topography', command=self.clear_topography)
         clear_topo.pack(side='left', padx=5, pady=5)
+
+        if self.DTMfromGPR:
+            topo_correction.configure(state='disabled')
+            clear_topo.configure(state='disabled')
 
         # Create check buttons for drawing lines and communication
         self.draw_y_line_var = tk.BooleanVar(value=True)
@@ -79,9 +85,16 @@ class TopFrameTools(Frame):
         vmax_entry.bind('<Return>', self.update_vmin_vmax)
 
     def create_zoom_controls(self):
-        zoom_in_button = tk.Button(self, text="+", command=lambda: self.section_canvas.zoom_section('in'))
+        self.zoom_in_image = Image.open("zoom.ico").resize((20, 20), Image.LANCZOS)
+        self.zoom_in_photo = ImageTk.PhotoImage(self.zoom_in_image)
+
+        self.zoom_out_image = Image.open("zoom_out.ico").resize((20, 20), Image.LANCZOS)
+        self.zoom_out_photo = ImageTk.PhotoImage(self.zoom_out_image)
+
+        zoom_in_button = tk.Button(self, image=self.zoom_in_photo, command=lambda: self.section_canvas.zoom_section('in'))
         zoom_in_button.pack(side="left", padx=5, pady=5)
-        zoom_out_button = tk.Button(self, text="-", command=lambda: self.section_canvas.zoom_section('out'))
+
+        zoom_out_button = tk.Button(self, image=self.zoom_out_photo, command=lambda: self.section_canvas.zoom_section('out'))
         zoom_out_button.pack(side="left", padx=5, pady=5)
 
     def set_zoom_controls(self):
