@@ -264,7 +264,7 @@ class FldData:
         if 'DTMfromGPR' in self.file_name:
             depth_m = self.pixelsize_z * valid_section_data.shape[0]
         else:
-            depth_m = self.depth_table[valid_section_data.shape[0]-1][0] + self.depth_table[valid_section_data.shape[0]-1][1]
+            depth_m = abs(self.depth_table[valid_section_data.shape[0]-1][0] + self.depth_table[valid_section_data.shape[0]-1][1])
 
         return dist, valid_section_data, depth_m, self.pixelsize_z, self.data_type, top_removed, bottom_removed, self.depth_table
 
