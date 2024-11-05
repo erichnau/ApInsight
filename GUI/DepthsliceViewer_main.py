@@ -412,6 +412,7 @@ class TopFrame(Frame):
 
         self.measure_mode = False
         self.mw = None
+        self.rectangle_mode = False
 
         self.section_view = None
         self.section_view_active = False
@@ -481,6 +482,7 @@ class TopFrame(Frame):
             self.measure_mode = False
         else:
             self.disable_draw_mode()
+            self.disable_rectangle_mode()
             self.mw = MeasurementWindow(self.frame_image, self)
             self.measure_tool.config(relief='sunken')
             self.measure_mode = True
