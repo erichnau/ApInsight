@@ -85,10 +85,10 @@ class TopFrameTools(Frame):
         vmax_entry.bind('<Return>', self.update_vmin_vmax)
 
     def create_zoom_controls(self):
-        self.zoom_in_image = Image.open("zoom.ico").resize((20, 20), Image.LANCZOS)
+        self.zoom_in_image = Image.open("icons/zoom.ico").resize((20, 20), Image.LANCZOS)
         self.zoom_in_photo = ImageTk.PhotoImage(self.zoom_in_image)
 
-        self.zoom_out_image = Image.open("zoom_out.ico").resize((20, 20), Image.LANCZOS)
+        self.zoom_out_image = Image.open("icons/zoom_out.ico").resize((20, 20), Image.LANCZOS)
         self.zoom_out_photo = ImageTk.PhotoImage(self.zoom_out_image)
 
         zoom_in_button = tk.Button(self, image=self.zoom_in_photo, command=lambda: self.section_canvas.zoom_section('in'))

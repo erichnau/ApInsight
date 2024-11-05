@@ -19,10 +19,10 @@ def start_apinsight():
 
     if platform.system() == 'Windows':
         # Maximize the window on Windows
-        root.iconbitmap('icon2.ico')
+        root.iconbitmap('icons/icon2.ico')
         root.state('zoomed')
     else:
-        icon_image = PhotoImage(file='icon2.png')
+        icon_image = PhotoImage(file='icons/icon2.png')
         root.iconphoto(True, icon_image)
         root.attributes('-zoomed', True)
         config_manager.set_option('Application', 'use_compiled_exe', 'False')

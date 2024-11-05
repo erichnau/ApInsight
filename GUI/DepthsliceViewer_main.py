@@ -342,9 +342,9 @@ class MenuBuilder:
         options_window = tk.Toplevel(self.master)
         options_window.title("Options")
         if platform.system() == 'Windows':
-            options_window.iconbitmap('icon2.ico')
+            options_window.iconbitmap('icons/icon2.ico')
         else:
-            icon_image = PhotoImage(file='icon2.png')
+            icon_image = PhotoImage(file='icons/icon2.png')
             options_window.iconphoto(True, icon_image)
         options_window.geometry('300x250')  # Adjusted size to accommodate new frame
 

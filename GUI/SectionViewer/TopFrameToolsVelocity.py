@@ -80,13 +80,13 @@ class TopFrameToolsVelocity(tk.Frame):
         self.home = tk.Button(zoom_pan_frame, text='Zoom to full extent', command=self.callback_home, state='disabled')
         self.home.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.zoom_image = Image.open("zoom.ico").resize((20, 20), Image.LANCZOS)
+        self.zoom_image = Image.open("icons/zoom.ico").resize((20, 20), Image.LANCZOS)
         self.zoom_photo = ImageTk.PhotoImage(self.zoom_image)
 
         self.zoom_button = tk.Button(zoom_pan_frame, image=self.zoom_photo, command=self.toggle_zoom, state='disabled')
         self.zoom_button.pack(side=tk.LEFT, padx=5, pady=5)
 
-        self.pan_image = Image.open("pan.ico").resize((20, 20), Image.LANCZOS)
+        self.pan_image = Image.open("icons/pan.ico").resize((20, 20), Image.LANCZOS)
         self.pan_photo = ImageTk.PhotoImage(self.pan_image)
 
         self.pan_button = tk.Button(zoom_pan_frame, image=self.pan_photo, command=self.toggle_pan, state='disabled')

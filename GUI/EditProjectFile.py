@@ -533,9 +533,9 @@ class ProjectGUI(Frame, object):
         self.results_window = Toplevel(self.master)
         self.results_window.title("FLD File Check Results")
         if platform.system() =='Windows':
-            self.results_window.iconbitmap('icon2.ico')
+            self.results_window.iconbitmap('icons/icon2.ico')
         else:
-            icon_image = PhotoImage(file='icon2.png')
+            icon_image = PhotoImage(file='icons/icon2.png')
             self.results_window.iconphoto(True, icon_image)
         self.results_window.geometry("400x300+300+300")
 
@@ -709,9 +709,9 @@ class ProjectGUI(Frame, object):
         self.selected_datasets = {}
         self.results_window = Toplevel(self.master)
         if platform.system() =='Windows':
-            self.results_window.iconbitmap('icon2.ico')
+            self.results_window.iconbitmap('icons/icon2.ico')
         else:
-            icon_image = PhotoImage(file='icon2.png')
+            icon_image = PhotoImage(file='icons/icon2.png')
             self.results_window.iconphoto(True, icon_image)
         self.results_window.title("Depthslice Images Check")
         self.results_window.geometry("500x400+300+300")
@@ -922,9 +922,9 @@ def start_projectGUI(root, frame_left):
     global edit_project_window
     edit_project_window = Toplevel(root)
     if platform.system() == 'Windows':
-        edit_project_window.iconbitmap('icon2.ico')
+        edit_project_window.iconbitmap('icons/icon2.ico')
     else:
-        icon_image = PhotoImage(file='icon2.png')
+        icon_image = PhotoImage(file='icons/icon2.png')
         edit_project_window.iconphoto(True, icon_image)
     edit_project_window.title('Edit project file')
     edit_project_window.geometry("1080x720")

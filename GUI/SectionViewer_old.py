@@ -27,9 +27,9 @@ class SectionView(tk.Toplevel):
 
         self.title("Section View")
         if platform.system() == 'Windows':
-            self.iconbitmap('icon2.ico')
+            self.iconbitmap('icons/icon2.ico')
         else:
-            icon_image = PhotoImage(file='icon2.png')
+            icon_image = PhotoImage(file='icons/icon2.png')
             self.iconphoto(True, icon_image)
 
         self.geometry("%dx%d+0+0" % (window_width, window_height))

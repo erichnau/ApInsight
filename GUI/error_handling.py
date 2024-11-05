@@ -7,9 +7,9 @@ def show_error_dialog(message):
     error_dialog = tk.Toplevel()
     error_dialog.title("Error")
     if platform.system() == 'Windows':
-        error_dialog.iconbitmap('icon2.ico')
+        error_dialog.iconbitmap('icons/icon2.ico')
     else:
-        icon_image = PhotoImage(file='icon2.png')
+        icon_image = PhotoImage(file='icons/icon2.png')
         error_dialog.iconphoto(True, icon_image)
 
     # Add a label with the error message
