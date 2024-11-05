@@ -105,8 +105,6 @@ def read_fld_data_specs(file_content, z_size):
 
     z_pixels = abs(np.frombuffer(file_content[stop_num+4:stop_num+8], dtype='>f4')[0])
 
-    print(data_type, num_dt, z_pixels, stop_num)
-
     # Calculate the start and stop indices for the depth table
     depth_table_start = stop_num
     depth_table_stop = depth_table_start + num_dt * 8  # Each entry is 8 bytes
