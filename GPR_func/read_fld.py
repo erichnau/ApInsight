@@ -80,13 +80,18 @@ def read_fld_size(file_path):
 
 def read_fld_header(file_content):
     header_data = np.frombuffer(file_content[:40], dtype=np.dtype('>i4, >i4, >i4, >i4, >i4, >i4, >i4, >i4, >i4, >i4'))
-    _, xpixels, ypixels, zpixels, x_start, x_end, _, _, z_start, z_end = header_data[0]
+    _, xpixels, ypixels, zpixels, x_start, x_end, y_start, y_end, z_start, z_end = header_data[0]
 
-    pixelsize = ((x_end-x_start) / xpixels) / 100
+    #pixelsize = ((x_end-x_start) / xpixels) / 100
     pixelsize_z = ((z_end - z_start) / zpixels) / 100
 
     x_coor = np.frombuffer(file_content[198:206], dtype='>f8')[0]
     y_coor = np.frombuffer(file_content[214:222], dtype='>f8')[0]
+
+    x_coor_end = np.frombuffer(file_content[206:214], dtype='>f8')[0]
+    y_coor_end = np.frombuffer(file_content[222:230], dtype='>f8')[0]
+
+    pixelsize = round(((x_coor_end-x_coor) / xpixels), 2)
 
     return xpixels, ypixels, zpixels, pixelsize, y_coor, x_coor, pixelsize_z
 
@@ -188,6 +193,7 @@ def read_fld_with_threads(file_content, x_size, y_size, number_of_layers, start_
     return data
 
 def create_depthslice_images(vmin, vmax, npy_file_path, zpixels, pixelsize_z, pixelsize_x, x_coor, y_coor, depth_table, time_table, data_type, z_vals):
+    print('Pixelsizes: ', zpixels, pixelsize_z, pixelsize_x)
     pixelsize_z = round(pixelsize_z * 100)
 
     radar_data = np.load(npy_file_path)
