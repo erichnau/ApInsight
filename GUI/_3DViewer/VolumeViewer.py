@@ -63,8 +63,8 @@ class HistogramWidget(QtWidgets.QFrame):
         self.line.set_xdata(self.opacity_points)
         self.line.set_ydata(self.opacity_values)
         for i, point in enumerate(self.draggable_points):
-            point.set_xdata(self.opacity_points[i])
-            point.set_ydata(self.opacity_values[i])
+            point.set_xdata([self.opacity_points[i]])
+            point.set_ydata([self.opacity_values[i]])
         self.canvas.draw()
 
 class VolumeViewer(QtWidgets.QMainWindow):

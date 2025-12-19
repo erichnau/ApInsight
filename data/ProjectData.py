@@ -227,7 +227,6 @@ class FldData:
             top_removed = np.argmax(layers_to_keep)
             self.bottom_zeros = fld_dset.shape[0] - (len(layers_to_keep) - np.argmax(layers_to_keep[::-1])) - top_removed
 
-
     def extract_file_name(self, file_path):
         return os.path.basename(file_path)
 

@@ -419,6 +419,8 @@ def save_project_info_to_json(input_file, gui):
             json.dump(data, f, indent=4)
 
         return json_file
+
+
 def add_data(input_file):
     """
     Takes a .fld or .ap_prj file as input and returns a dictionary with the project data

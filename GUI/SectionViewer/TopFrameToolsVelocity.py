@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog
 import os
+import re
 from os import path
 import numpy as np
 from PIL import Image, ImageTk
@@ -156,6 +157,8 @@ class TopFrameToolsVelocity(tk.Frame):
         tooltip = ToolTip(widget, text)
         self.tooltip_bindings[widget] = tooltip
 
+    import re  # Import regex module for pattern matching
+
     def open_file(self, file_path=None):
         if file_path is None:
             file_path = filedialog.askopenfilename(filetypes=[('DAT', '*.dat')])
@@ -173,32 +176,44 @@ class TopFrameToolsVelocity(tk.Frame):
         self.callback_display_data(data, info, vmax, vmin)
         self.activate_buttons()
 
-        self.folder = file_path[:file_path.rfind('/')]
+        self.folder = os.path.dirname(file_path)  # Get folder path
+        file_name = os.path.basename(file_path)  # Get filename only
 
-        proj_name_temp = file_path[file_path.rfind('/') + 1:]
-        ind1 = proj_name_temp.rfind('_')
-        temp_1 = proj_name_temp[:proj_name_temp.rfind('_')]
-        ind2 = temp_1.rfind('_')
+        # Check if the filename starts with "LINE" (new convention)
+        match = re.match(r"^(LINE)(\d+)", file_name)
 
-        new_line_nr = proj_name_temp[:ind1][ind2 + 1:]
-        self.line_nr_digits = len(new_line_nr)  # Store the length of the line number
-        new_project_name = proj_name_temp[:ind1][:ind2]
-        new_appendix = proj_name_temp[ind1:].rsplit('.')[0]
-        new_extension = proj_name_temp[ind1:].rsplit('.')[1]
+        if match:
+            # Extract project name (fixed "LINE") and line number
+            new_project_name = match.group(1)  # "LINE"
+            new_line_nr = match.group(2)  # Extracted number (e.g., "18")
+        else:
+            # Old naming convention
+            proj_name_temp = file_path[file_path.rfind('/') + 1:]
+            ind1 = proj_name_temp.rfind('_')
+            temp_1 = proj_name_temp[:proj_name_temp.rfind('_')]
+            ind2 = temp_1.rfind('_')
+
+            new_line_nr = proj_name_temp[:ind1][ind2 + 1:]
+            new_project_name = proj_name_temp[:ind2]  # Extract everything before that number
+
+        new_appendix = file_name[file_name.rfind('_'):]  # Everything after last "_"
+        new_extension = file_name.split('.')[-1]  # File extension
 
         # Check if the project name has changed
         if new_project_name != self.project_name:
-            self.velo_model = []  # Reset the velocity model
+            self.velo_model = []  # Reset velocity model
             self.plot_velo_model.config(state='disabled')
             self.save_velo_model.config(state='disabled')
 
-        self.line_nr = int(new_line_nr)  # Convert the line number to an integer
+        self.line_nr = int(new_line_nr)  # Convert line number to integer
+        self.line_nr_digits = len(new_line_nr)  # Store the length of the
         self.project_name = new_project_name
         self.appendix = new_appendix
+        print(self.appendix)
         self.extension = new_extension
 
         self.project_label2.config(text=self.project_name)
-        self.line_label2.config(text=str(self.line_nr).zfill(self.line_nr_digits))
+        self.line_label2.config(text=str(self.line_nr))
 
         self.master.lift()
 
@@ -535,7 +550,7 @@ class TopFrameToolsVelocity(tk.Frame):
 
         # Plot the loaded model
         for entry in self.velo_model:
-            if entry[0] == self.line_nr:
+            if int(entry[0]) == int(self.line_nr):
                 velo_point, = self.section_canvas.ax.plot(float(entry[1]), float(entry[2]), marker="o", markersize=5,
                                                           markeredgecolor="red", markerfacecolor="red")
                 label = entry[3] + ' m/ns'
@@ -552,8 +567,15 @@ class TopFrameToolsVelocity(tk.Frame):
         c = 1
 
         def open_next(c):
-            new_number = format((self.line_nr + c), f"0{self.line_nr_digits}d")  # Format using line_nr_digits
-            next_profile = f"{self.folder}/{self.project_name}_{new_number}{self.appendix}.{self.extension}"
+            new_number = format((self.line_nr + c), f"0{self.line_nr_digits}d")
+
+            # Check if using the "LINE" naming convention
+            if self.project_name.startswith("LINE"):
+                next_profile = f"{self.folder}/{self.project_name[:4]}{new_number}{self.appendix}"
+            else:
+                next_profile = f"{self.folder}/{self.project_name}_{str(new_number).zfill(self.line_nr_digits)}{self.appendix}"
+
+            print("Trying to open:", next_profile)
 
             if path.exists(next_profile):
                 self.file = next_profile
@@ -564,15 +586,21 @@ class TopFrameToolsVelocity(tk.Frame):
                     open_next(c)
 
         open_next(c)
-
         self.plot_saved_model()
 
     def previous_profile(self):
         c = 1
 
         def open_previous(c):
-            new_number = format((self.line_nr - c), f"0{self.line_nr_digits}d")  # Format using line_nr_digits
-            next_profile = f"{self.folder}/{self.project_name}_{new_number}{self.appendix}.{self.extension}"
+            new_number = format((self.line_nr - c), f"0{self.line_nr_digits}d")
+
+            # Check if using the "LINE" naming convention
+            if self.project_name.startswith("LINE"):
+                next_profile = f"{self.folder}/{self.project_name[:4]}{new_number}{self.appendix}"
+            else:
+                next_profile = f"{self.folder}/{self.project_name}_{str(new_number).zfill(self.line_nr_digits)}{self.appendix}"
+
+            print("Trying to open:", next_profile)
 
             if path.exists(next_profile):
                 self.file = next_profile
@@ -583,7 +611,6 @@ class TopFrameToolsVelocity(tk.Frame):
                     open_previous(c)
 
         open_previous(c)
-
         self.plot_saved_model()
 
 
