@@ -30,6 +30,14 @@ class ImageFrame(Frame):
         self.active_section = None
         self.draw_section_mode = False
         self.draw_rectangle_mode = False
+
+        # --- Polyline drawing ---
+        self.draw_polyline_mode = False
+        self.polyline_canvas_points = []  # [(x, y), ...] in canvas coords
+        self.polyline_global_points = []  # [(X, Y), ...] in global coords
+        self.polyline_preview_line = None
+        self.polyline_finished = False
+
         self.section_drawn = False
         self.section_view_active = False
         self.marker_drawn = False
@@ -83,6 +91,25 @@ class ImageFrame(Frame):
         self.canvas.bind('<B1-Motion>', self.draw_section)
         self.canvas.bind('<ButtonRelease-1>', self.finish_section)
         self.canvas.bind("<Motion>", self.print_canvas_coordinates)
+
+    def set_draw_polyline_mode(self):
+        # Clear previous bindings
+        self.canvas.unbind('<ButtonPress-1>')
+        self.canvas.unbind('<B1-Motion>')
+        self.canvas.unbind('<ButtonRelease-1>')
+        self.canvas.unbind('<Double-Button-1>')
+        self.canvas.unbind('<MouseWheel>')
+
+        # Reset polyline state
+        self.polyline_canvas_points = []
+        self.polyline_global_points = []
+        self.polyline_finished = False
+
+        # Bind polyline-specific events
+        self.canvas.bind('<Button-1>', self.add_polyline_vertex)
+        self.canvas.bind('<Double-Button-1>', self.finish_polyline)
+        self.canvas.bind('<Motion>', self.update_polyline_preview)
+
 
     def set_draw_rectangle_mode(self):
         # Unbind the previous bindings
@@ -144,6 +171,9 @@ class ImageFrame(Frame):
 
         if self.section_drawn:
             self.update_canvas_objects()
+
+        if self.polyline_global_points and self.polyline_finished:
+            self.redraw_polyline()
 
     def set_zoom(self, zoom):
         self.scale = zoom
@@ -497,14 +527,26 @@ class ImageFrame(Frame):
         return closest_x, closest_y
 
     def clear_section(self):
-        self.canvas.delete('section', 'section_p', 'start_p', 'stop_p', 'label_A', 'label_B')
+        self.canvas.delete(
+            'section', 'section_p',
+            'start_p', 'stop_p',
+            'label_A', 'label_B',
+            'polyline_vertex',
+            'polyline_segment',
+            'polyline_preview'
+        )
+
         self.active_section_drawn = False
-        self.frame_right.update_button_states(self.active_section_drawn)
-        self.frame_right.disable_section_button()
+        self.polyline_finished = False
         self.marker_drawn = False
+
+        self.frame_right.update_button_states(False)
+        self.frame_right.disable_section_button()
+
 
     def send_section_to_right_frame(self, start_coords, end_coords):
         self.frame_right.add_new_section(start_coords, end_coords)
+
 
     def draw_section_line(self, section_name, start_coords, end_coords, visible=True):
         if visible:
@@ -514,9 +556,11 @@ class ImageFrame(Frame):
             end_x, end_y = self.global_to_canvas_coor(*end_coords)
             self.canvas.create_line(start_x, start_y, end_x, end_y, tags=line_tag, fill='black', width=2)
 
+
     def update_section_lines(self):
         for section_name, section_info in self.frame_right.sections.items():
             self.update_section_line(section_name, section_info['start'], section_info['end'], section_info['select'].get())
+
 
     def update_section_line(self, section_name, start_coords, end_coords, visible):
         line_tag = f"section_line_{section_name.replace(' ', '_')}"
@@ -525,6 +569,7 @@ class ImageFrame(Frame):
             self.draw_section_line(section_name, start_coords, end_coords, visible)
         else:
             self.hide_section(section_name)
+
 
     def update_section_visibility(self):
         for section_name, section_info in self.frame_right.sections.items():
@@ -536,13 +581,16 @@ class ImageFrame(Frame):
                     # Hide the section if the 'select' checkbox is not checked
                     self.hide_section(section_name)
 
+
     def show_section(self, section_name, start_coords, end_coords):
         self.draw_section_line(section_name, start_coords, end_coords, visible=True)
+
 
     def hide_section(self, section_name):
         line_tag = f"section_line_{section_name}"
 
         self.canvas.delete(line_tag)
+
 
     def set_active_section(self, section_name):
         if section_name in self.frame_right.sections:
@@ -593,6 +641,142 @@ class ImageFrame(Frame):
                                     fill="black", font=("Arial", 14, "bold"))
             self.canvas.create_text(stop_x + label_offset_x, stop_y + label_offset_y, text="B", tags="label_B",
                                     fill="black", font=("Arial", 14, "bold"))
+
+
+    def add_polyline_vertex(self, event):
+        if not self.draw_polyline_mode or self.polyline_finished:
+            return
+
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+
+        # Convert to global coordinates
+        glob_x, glob_y = self.canvas_coor_to_global(canvas_x, canvas_y)
+
+        # Store points
+        self.polyline_canvas_points.append((canvas_x, canvas_y))
+        self.polyline_global_points.append((glob_x, glob_y))
+
+        # Draw vertex marker
+        r = 3
+        self.canvas.create_oval(
+            canvas_x - r, canvas_y - r,
+            canvas_x + r, canvas_y + r,
+            fill='orange red', outline='orange red',
+            tags='polyline_vertex'
+        )
+
+        # Draw segment if not the first point
+        if len(self.polyline_canvas_points) > 1:
+            x1, y1 = self.polyline_canvas_points[-2]
+            x2, y2 = self.polyline_canvas_points[-1]
+            self.canvas.create_line(
+                x1, y1, x2, y2,
+                fill='orange red', width=2,
+                tags='polyline_segment'
+            )
+
+
+    def update_polyline_preview(self, event):
+        if not self.draw_polyline_mode or self.polyline_finished:
+            return
+
+        if len(self.polyline_canvas_points) == 0:
+            return
+
+        # Remove old preview
+        if self.polyline_preview_line:
+            self.canvas.delete(self.polyline_preview_line)
+            self.polyline_preview_line = None
+
+        last_x, last_y = self.polyline_canvas_points[-1]
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+
+        self.polyline_preview_line = self.canvas.create_line(
+            last_x, last_y, canvas_x, canvas_y,
+            fill='orange red', width=1, dash=(4, 2),
+            tags='polyline_preview'
+        )
+
+
+    def finish_polyline(self, event):
+        if not self.draw_polyline_mode or self.polyline_finished:
+            return
+
+        # Require at least two vertices
+        if len(self.polyline_global_points) < 2:
+            return
+
+        # Remove preview line
+        if self.polyline_preview_line:
+            self.canvas.delete(self.polyline_preview_line)
+            self.polyline_preview_line = None
+
+        self.polyline_finished = True
+        self.draw_polyline_mode = False
+
+        # Clean up bindings
+        self.bindings()  # restore pan/zoom
+
+        # OPTIONAL: visual emphasis of final polyline
+        self.canvas.itemconfig('polyline_segment', width=3)
+
+        # Hand off polyline (stub for now)
+        self.send_polyline_to_right_frame(self.polyline_global_points)
+
+
+    def redraw_polyline(self):
+        if not self.polyline_global_points or len(self.polyline_global_points) < 2:
+            return
+
+        # Remove existing polyline drawings
+        self.canvas.delete('polyline_vertex')
+        self.canvas.delete('polyline_segment')
+        self.canvas.delete('polyline_preview')
+
+        # Convert all global points back to canvas coords
+        canvas_points = [
+            self.global_to_canvas_coor(x, y)
+            for x, y in self.polyline_global_points
+        ]
+
+        # Draw segments
+        for i in range(1, len(canvas_points)):
+            x1, y1 = canvas_points[i - 1]
+            x2, y2 = canvas_points[i]
+            self.canvas.create_line(
+                x1, y1, x2, y2,
+                fill='orange red',
+                width=3,
+                tags='polyline_segment'
+            )
+
+        # Draw vertices
+        for x, y in canvas_points:
+            r = 3
+            self.canvas.create_oval(
+                x - r, y - r,
+                x + r, y + r,
+                fill='orange red',
+                outline='orange red',
+                tags='polyline_vertex'
+            )
+
+    def send_polyline_to_right_frame(self, global_vertices):
+        """
+        global_vertices: list of (x, y) tuples in real-world coordinates
+        """
+        print("Polyline section vertices:")
+        for v in global_vertices:
+            print(f"  {v}")
+
+        # Later:
+        # self.frame_right.add_new_polyline_section(global_vertices)
+
+
+
+
 
 
 
