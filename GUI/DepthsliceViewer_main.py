@@ -242,6 +242,7 @@ class MenuBuilder:
             self.frame_left.create_checkboxes(self.project_data.projects)
             self.top_frame.zoom_button.config(state='normal')
             self.top_frame.draw_section_button.config(state='normal')
+            self.top_frame.draw_polyline_button.config(state='normal')
             self.top_frame.measure_tool.config(state='normal')
             self.top_frame.disable_draw_mode()
             self.frame_right.update_project(self.json_file)
@@ -413,6 +414,8 @@ class TopFrame(Frame):
         self.measure_mode = False
         self.mw = None
 
+        self.draw_polyline_mode = False
+
         self.section_view = None
         self.section_view_active = False
 
@@ -425,6 +428,9 @@ class TopFrame(Frame):
 
         self.draw_section_button = tk.Button(self, text="Draw Section", command=self.enable_draw_mode, state='disabled')
         self.draw_section_button.pack(side='left', padx=5, pady=5)
+
+        self.draw_polyline_button = Button(self, text="Draw Polyline Section", command=self.enable_draw_polyline_mode, state='disabled')
+        self.draw_polyline_button.pack(side='left', padx=5, pady=5)
 
         self.measure_tool = tk.Button(self, text="Measure Tool", command=self.measure, state='disabled')
         self.measure_tool.pack(side='left', padx=5, pady=5)
@@ -470,9 +476,59 @@ class TopFrame(Frame):
             self.draw_section_button.config(relief="sunken")
             self.frame_image.draw_section_mode = True
 
+
+    def enable_draw_polyline_mode(self):
+        # Disable measure tool if active
+        self.measure_tool.config(relief='raised')
+        if self.mw is not None:
+            self.mw.on_window_close()
+            self.measure_mode = False
+
+        # Turn OFF normal section mode if active
+        if self.frame_image.draw_section_mode:
+            self.frame_image.bindings()
+            self.draw_section_button.config(relief="raised")
+            self.frame_image.draw_section_mode = False
+
+        # Toggle polyline mode
+        if self.draw_polyline_mode:
+            # Disable polyline mode
+            self.frame_image.bindings()
+            self.draw_polyline_button.config(relief="raised")
+            self.draw_polyline_mode = False
+            self.frame_image.draw_polyline_mode = False
+        else:
+            # Check for active section view
+            if self.section_view_active:
+                result = messagebox.askquestion(
+                    "Warning",
+                    "Another Section View is active. Do you want to continue? "
+                    "This will close the current SectionView window",
+                    icon='warning'
+                )
+                if result == 'no':
+                    return
+                else:
+                    self.section_view.cleanup()
+
+            # Enable polyline mode
+            self.frame_image.set_draw_polyline_mode()  # to be implemented in Step 2
+            self.draw_polyline_button.config(relief="sunken")
+            self.draw_section_button.config(relief="raised")
+
+            self.draw_polyline_mode = True
+            self.frame_image.draw_polyline_mode = True
+
+
     def disable_draw_mode(self):
         self.draw_section_button.config(relief="raised")
+        self.draw_polyline_button.config(relief="raised")
+
         self.frame_image.draw_section_mode = False
+        self.frame_image.draw_polyline_mode = False
+
+        self.draw_polyline_mode = False
+
 
     def measure(self):
         if self.measure_mode is True:
