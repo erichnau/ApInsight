@@ -268,6 +268,104 @@ class FldData:
 
         return dist, valid_section_data, depth_m, self.pixelsize_z, self.data_type, top_removed, bottom_removed, self.depth_table
 
+
+    def create_arbitrary_sections(self, vertices):
+        """
+        Create an arbitrary section along a polyline defined by vertices.
+        vertices: list of (x, y) tuples in global coordinates
+        """
+
+        if len(vertices) < 2:
+            raise ValueError("At least two vertices are required for a polysection.")
+
+        # Pixel size handling (same as before)
+        if self.data_type == 2:
+            self.pixelsize_z = 0.01
+
+        section_segments = []
+        dist_segments = []
+
+        total_dist = 0.0
+
+        # Loop over each segment
+        for i in range(len(vertices) - 1):
+            start_x, start_y = vertices[i]
+            stop_x, stop_y = vertices[i + 1]
+
+            # Segment distance
+            dist = np.sqrt((start_x - stop_x) ** 2 + (start_y - stop_y) ** 2)
+            if dist == 0:
+                continue
+
+            n = max(2, round(dist / self.pixelsize_z))
+
+            course = np.column_stack((
+                np.linspace(start_x, stop_x, n),
+                np.linspace(start_y, stop_y, n)
+            ))
+
+            segment = self.fld_dset.interp(
+                x=('along_course', course[:, 0]),
+                y=('along_course', course[:, 1]),
+                method='linear'
+            )
+
+            segment_data = np.array(segment)
+
+            # Remove first column for all but the first segment (avoid duplicates)
+            if section_segments:
+                segment_data = segment_data[:, 1:]
+
+            section_segments.append(segment_data)
+            dist_segments.append(dist)
+
+            total_dist += dist
+
+        # Concatenate all segments horizontally
+        full_section = np.concatenate(section_segments, axis=1)
+
+        # Filter invalid rows (same logic as before)
+        valid_section_data = filter_nan_and_zero_rows(full_section)
+
+        # --- DTM handling (unchanged logic, just applied once) ---
+        if 'DTMfromGPR' in self.file_name:
+            rows_to_keep = ~np.all(
+                np.isnan(full_section) | (full_section == 0),
+                axis=1
+            )
+
+            top_removed = np.argmax(rows_to_keep)
+            bottom_removed = (
+                    full_section.shape[0]
+                    - (len(rows_to_keep) - np.argmax(rows_to_keep[::-1]))
+                    - top_removed
+                    - self.bottom_zeros
+            )
+        else:
+            top_removed = None
+            bottom_removed = None
+
+        # --- Depth calculation ---
+        if 'DTMfromGPR' in self.file_name:
+            depth_m = self.pixelsize_z * valid_section_data.shape[0]
+        else:
+            depth_m = abs(
+                self.depth_table[valid_section_data.shape[0] - 1][0]
+                + self.depth_table[valid_section_data.shape[0] - 1][1]
+            )
+
+        return (
+            total_dist,
+            valid_section_data,
+            depth_m,
+            self.pixelsize_z,
+            self.data_type,
+            top_removed,
+            bottom_removed,
+            self.depth_table
+        )
+
+
     def create_3d_subset(self, coordinates):
         # Retrieve the corner points of the rectangle from self.rectangle_data
         start_coords = coordinates["start_coords"]
@@ -376,6 +474,12 @@ class ArbSectionData():
         self.bottom_removed = bottom_removed
         self.depth_table = depth_table
 
+        self.vertices = section_coor
+        self.is_polysection = len(section_coor) > 2
+
+        if self.is_polysection:
+            self._compute_polyline_distances()
+
 
     def create_image_from_section(self, temp_folder_path, vmin, vmax):
         image_path = os.path.join(temp_folder_path, "section_image_temp.png")
@@ -457,3 +561,39 @@ class ArbSectionData():
         plt.close()
 
         return topo_image_path
+
+
+    def _compute_polyline_distances(self):
+        self.segment_lengths = []
+        self.cumulative_distances = [0.0]
+
+        for i in range(len(self.vertices) - 1):
+            x0, y0 = self.vertices[i]
+            x1, y1 = self.vertices[i + 1]
+            d = ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5
+            self.segment_lengths.append(d)
+            self.cumulative_distances.append(self.cumulative_distances[-1] + d)
+
+
+    def get_local_direction(self, d):
+        """
+        Returns the local direction vector (dx, dy) of the section
+        at cumulative distance d.
+        """
+        if not self.is_polysection:
+            x0, y0 = self.section_coor[0]
+            x1, y1 = self.section_coor[1]
+            return x1 - x0, y1 - y0
+
+        for i in range(len(self.segment_lengths)):
+            if self.cumulative_distances[i] <= d <= self.cumulative_distances[i + 1]:
+                x0, y0 = self.vertices[i]
+                x1, y1 = self.vertices[i + 1]
+                return x1 - x0, y1 - y0
+
+        # fallback: last segment
+        x0, y0 = self.vertices[-2]
+        x1, y1 = self.vertices[-1]
+        return x1 - x0, y1 - y0
+
+

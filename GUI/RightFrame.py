@@ -212,57 +212,125 @@ class RightFrame(Frame):
             self.import_button['state'] = 'normal'
 
     def create_arbitrary_section(self):
-        # Check if a SectionView window is already open
+        # Close an existing SectionView window if present
         if self.section_view_window is not None:
-            self.section_view_window.destroy()  # Close the existing window
+            self.section_view_window.destroy()
+            self.section_view_window = None
 
-        # Get the selected data
+        # Get selected data from LeftFrame
         data = self.frame_left.get_selected_data()
+        if data is None:
+            show_error_dialog("No dataset selected.")
+            return
 
-        # Extract coordinates from the active section
-        if self.frame_image.active_section:
-            start_coords = self.frame_image.active_section['start']
-            stop_coords = self.frame_image.active_section['end']
+        # Determine which section is currently focused (blue background)
+        section_name = None
+        for name, info in self.sections.items():
+            if info['frame'].cget('bg') == 'blue':
+                section_name = name
+                break
 
-            # Convert global coordinates to the format needed for creating arbitrary sections
-            start_x, start_y = self.frame_image.canvas_coor_to_global(*start_coords)
-            stop_x, stop_y = self.frame_image.canvas_coor_to_global(*stop_coords)
+        if not section_name:
+            show_error_dialog("No section selected.")
+            return
+
+        section_info = self.sections.get(section_name)
+        if not section_info:
+            show_error_dialog("Invalid section selection.")
+            return
+
+        # ------------------------------------------------------------------
+        # DISPATCH BY SECTION TYPE
+        # ------------------------------------------------------------------
+
+        # === Case 1: NORMAL (STRAIGHT) SECTION =============================
+        if section_info.get('type') != 'polyline':
+            start_x, start_y = section_info['start']
+            stop_x, stop_y = section_info['end']
 
             section_coor = [(start_x, start_y), (stop_x, stop_y)]
 
-            dist, section, depth_m, sampling_interval, data_type, top_removed, bottom_removed, depth_table = data.fld_file.create_arbitrary_section(start_x, start_y, stop_x,
-                                                                                               stop_y)
+            dist, section, depth_m, sampling_interval, data_type, \
+                top_removed, bottom_removed, depth_table = \
+                data.fld_file.create_arbitrary_section(
+                    start_x, start_y, stop_x, stop_y
+                )
 
-            valid_section = check_section_array(section)
-
-            if section.shape[0] == 0 or valid_section == False:
-                show_error_dialog("Section outside the data-area, please try another section!")
-            else:
-                project_file_path = self.menu_builder.get_project_file()
-                dtm_files = data.DTM_files
-
-                # Create the SectionView window with the new coordinates
-                arb_section = ArbSectionData(section, depth_m, dist, sampling_interval, dtm_files, section_coor, data.fld_file.pixelsize_z, data_type, top_removed, bottom_removed, depth_table)
-
-                self.section_view_window = SectionView(arb_section, project_file_path, self.frame_image, self.frame_left, self.top_frame, self)
-
-                self.frame_left.define_section_view(self.section_view_window)
-                self.frame_image.define_section_view(self.section_view_window)
-                time.sleep(0.1)
-                self.update_frame_left()
-                self.update_image_frame()
-                self.top_frame.set_section_view(self.section_view_window)
-                self.top_frame.disable_draw_mode()
-                self.frame_image.bindings()
-                self.top_frame.section_view_active = True
-                self.section_view_active = True
-                self.disable_section_button()
-                self.disable_focus_buttons()
-                self.disable_keep_checkbuttons()
-                self.toggle_communication_button()
-                self.frame_left.disable_project_checkboxes()
+        # === Case 2: POLYSECTION ===========================================
         else:
-            print("No active section defined.")
+            vertices = section_info.get('vertices')
+
+            if not vertices or len(vertices) < 2:
+                show_error_dialog("Polysection has too few vertices.")
+                return
+
+            section_coor = vertices
+
+            dist, section, depth_m, sampling_interval, data_type, \
+                top_removed, bottom_removed, depth_table = \
+                data.fld_file.create_arbitrary_sections(vertices)
+
+        # ------------------------------------------------------------------
+        # VALIDATION
+        # ------------------------------------------------------------------
+        valid_section = check_section_array(section)
+
+        if section.shape[0] == 0 or valid_section is False:
+            show_error_dialog("Section outside the data-area, please try another section!")
+            return
+
+        # ------------------------------------------------------------------
+        # CREATE SECTION VIEW
+        # ------------------------------------------------------------------
+        project_file_path = self.menu_builder.get_project_file()
+        dtm_files = data.DTM_files
+
+        arb_section = ArbSectionData(
+            section,
+            depth_m,
+            dist,
+            sampling_interval,
+            dtm_files,
+            section_coor,
+            data.fld_file.pixelsize_z,
+            data_type,
+            top_removed,
+            bottom_removed,
+            depth_table
+        )
+
+        self.section_view_window = SectionView(
+            arb_section,
+            project_file_path,
+            self.frame_image,
+            self.frame_left,
+            self.top_frame,
+            self
+        )
+
+        # ------------------------------------------------------------------
+        # BOOKKEEPING / UI STATE (UNCHANGED LOGIC)
+        # ------------------------------------------------------------------
+        self.frame_left.define_section_view(self.section_view_window)
+        self.frame_image.define_section_view(self.section_view_window)
+
+        time.sleep(0.1)
+
+        self.update_frame_left()
+        self.update_image_frame()
+
+        self.top_frame.set_section_view(self.section_view_window)
+        self.top_frame.disable_draw_mode()
+        self.frame_image.bindings()
+
+        self.top_frame.section_view_active = True
+        self.section_view_active = True
+
+        self.disable_section_button()
+        self.disable_focus_buttons()
+        self.disable_keep_checkbuttons()
+        self.toggle_communication_button()
+        self.frame_left.disable_project_checkboxes()
 
     def clear_section(self):
         if self.section_view_window is not None:
@@ -347,7 +415,7 @@ class RightFrame(Frame):
 
             # Select checkbox with state from the dictionary
             select_checkbox = tk.Checkbutton(frame, variable=info['select'],
-                                             command=lambda name=name: self.on_select_toggle(name))
+                                             command=lambda n=name: self.on_select_toggle(name))
             select_checkbox.pack(side='left', padx=(0, 5))
             if info['select'].get():
                 select_checkbox.select()
@@ -355,7 +423,7 @@ class RightFrame(Frame):
                 select_checkbox.deselect()
 
             keep_checkbox = tk.Checkbutton(frame, text='Keep', variable=info['keep'],
-                                           command=lambda name=name: self.on_keep_toggle(name))
+                                           command=lambda n=name: self.on_keep_toggle(name))
             keep_checkbox.pack(side='left', padx=5)
 
             focus_button = tk.Button(frame, text='Focus',
@@ -398,6 +466,12 @@ class RightFrame(Frame):
 
     def on_select_toggle(self, section_name):
         # Update the select state in the dictionary
+
+        if self.sections[section_name].get('type') == 'polyline':
+            # For now: just update UI state, drawing comes later
+            self.frame_image.redraw_polyline()
+            return
+
         if section_name in self.sections:
             current_state = self.sections[section_name]['select'].get()
             self.sections[section_name]['select'].set(current_state)
@@ -482,6 +556,17 @@ class RightFrame(Frame):
 
     def focus_section(self, section_name):
         # Call ImageFrame's method to focus on the section
+        if self.sections[section_name].get('type') == 'polyline':
+            self.sections[section_name]['select'].set(True)
+
+            # highlight frame only
+            for info in self.sections.values():
+                info['frame'].config(bg=self.default_bg)
+
+            self.sections[section_name]['frame'].config(bg='blue')
+            return
+
+
         if section_name in self.sections:
             self.sections[section_name]['select'].set(True)
             self.frame_image.set_active_section(section_name)
@@ -552,33 +637,50 @@ class RightFrame(Frame):
         # Adjust the canvas scroll to bring the frame into view
         self.canvas.yview_moveto(target_position)
 
+
     def add_new_section(self, start_coords, end_coords):
-        if self.sections:
-            # Get the last section's name and extract its numerical part
-            last_section_number = self.find_highest_section_number()
-            last_section_name = 'Section ' + str(last_section_number)
+        # Find the last NORMAL (straight) section only
+        last_section_name = None
+        last_section_number = 0
+
+        for name, info in self.sections.items():
+            if info.get('type') != 'polyline' and name.startswith("Section"):
+                try:
+                    num = int(name.split()[-1])
+                    if num > last_section_number:
+                        last_section_number = num
+                        last_section_name = name
+                except ValueError:
+                    pass
+
+        if last_section_name is not None:
             last_section_kept = self.sections[last_section_name]['keep'].get()
 
             if last_section_kept:
-                # If the last section was kept, create a new section with the next number
+                # Create a new section with the next number
                 new_section_name = f"Section {last_section_number + 1}"
             else:
-                # If the last section was not kept, overwrite it
+                # Overwrite the last normal section
                 new_section_name = last_section_name
-                self.frame_image.update_section_line(new_section_name,
-                                                     self.sections[new_section_name]['start'],
-                                                     self.sections[new_section_name]['end'],
-                                                     False)
+
+                # Remove old section line from canvas before overwriting
+                self.frame_image.update_section_line(
+                    new_section_name,
+                    self.sections[new_section_name]['start'],
+                    self.sections[new_section_name]['end'],
+                    False
+                )
         else:
-            # If there are no sections, start with the first section
+            # No normal sections exist yet
             new_section_name = "Section 1"
 
         # Add or overwrite the section
         self.add_section(start_coords, end_coords, section_name=new_section_name)
 
-        # Update sections to reflect the changes
+        # Update UI
         self.update_sections()
-        self.scroll_to_bottom()  # Scroll to bottom only when adding a new section   ------
+        self.scroll_to_bottom()
+
 
     def delete_section(self, section_name):
         # Remove the section frame and delete it from the dictionary
@@ -595,15 +697,26 @@ class RightFrame(Frame):
             self.update_sections_button_states()
         self.canvas.bbox("all")
 
+
     def update_sections_button_states(self):
-        # Check if there are any sections in the dictionary
         has_sections = len(self.sections) > 0
 
-        # Enable or disable the buttons based on the presence of sections
+        # Enable show/hide/export if any sections exist
         state = 'normal' if has_sections else 'disabled'
         self.show_all_button['state'] = state
         self.hide_all_button['state'] = state
         self.export_button['state'] = state
+
+        # NEW: enable "Show Section" if any section is selected
+        any_selected = any(info['select'].get() for info in self.sections.values())
+
+        if any_selected:
+            self.enable_section_button()
+            self.clear_section_button['state'] = 'normal'
+        else:
+            self.disable_section_button()
+            self.clear_section_button['state'] = 'disabled'
+
 
     def export_sections(self):
         initial_dir = os.path.dirname(self.project_file) if self.project_file else None
@@ -758,3 +871,111 @@ class RightFrame(Frame):
         # Update the GUI and internal state as needed
         self.frame_image.clear_section()  # Assuming this method clears the relevant parts of the image frame
         self.update_sections_button_states()  # Update the state of any buttons related to sections
+
+    def add_new_polysection(self, vertices):
+        if len(vertices) < 2:
+            return
+
+        last_number = self.find_highest_polysection_number()
+        section_name = f"Polysection {last_number + 1}"
+
+        self.add_polysection(
+            vertices=vertices,
+            section_name=section_name
+        )
+
+        self.update_sections()
+        self.scroll_to_bottom()
+
+    def add_polysection(self, vertices, section_name):
+        bold_font = font.Font(weight="bold", size=10)
+
+        frame = tk.Frame(self.scrollable_frame)
+        frame.pack(fill='x', pady=2)
+
+        label = tk.Label(frame, text=section_name, width=10, font=bold_font)
+        label.pack(side='left', padx=5)
+
+        # Visible checkbox
+        select_var = tk.BooleanVar(value=True)
+        tk.Label(frame, text="Visible").pack(side='left', padx=(5, 0))
+        select_checkbox = tk.Checkbutton(
+            frame,
+            variable=select_var,
+            command=lambda: self.on_select_toggle(section_name)
+        )
+        select_checkbox.pack(side='left', padx=(0, 5))
+        select_checkbox.select()
+
+        # Keep checkbox
+        keep_var = tk.BooleanVar()
+        keep_checkbox = tk.Checkbutton(
+            frame,
+            text='Keep',
+            variable=keep_var,
+            command=lambda: self.on_keep_toggle(section_name)
+        )
+        keep_checkbox.pack(side='left', padx=5)
+
+        # Focus button
+        focus_button = tk.Button(
+            frame,
+            text='Focus',
+            command=lambda: self.focus_section(section_name)
+        )
+        focus_button.pack(side='left', padx=5)
+
+        self.sections[section_name] = {
+            'frame': frame,
+            'label': label,
+            'select': select_var,
+            'keep': keep_var,
+            'focus_button': focus_button,
+
+            # geometry
+            'type': 'polyline',
+            'vertices': vertices,
+            'start': vertices[0],
+            'end': vertices[-1],
+        }
+
+        self.update_sections_button_states()
+
+
+    def find_highest_polysection_number(self):
+        max_num = 0
+        for name, info in self.sections.items():
+            if info.get('type') == 'polyline' and name.startswith("Polysection"):
+                try:
+                    num = int(name.split()[-1])
+                    max_num = max(max_num, num)
+                except ValueError:
+                    pass
+        return max_num
+
+
+    def find_last_normal_section_name(self):
+        max_num = 0
+        last_name = None
+
+        for name, info in self.sections.items():
+            if info.get('type') != 'polyline' and name.startswith("Section"):
+                try:
+                    num = int(name.split()[-1])
+                    if num > max_num:
+                        max_num = num
+                        last_name = name
+                except ValueError:
+                    pass
+
+        return last_name, max_num
+
+
+    def get_focused_section_name(self):
+        for name, info in self.sections.items():
+            if info['frame'].cget('bg') == 'blue':
+                return name
+        return None
+
+
+

@@ -42,6 +42,17 @@ class ImageFrame(Frame):
         self.section_view_active = False
         self.marker_drawn = False
 
+        # --- Section marker line state (always defined) ---
+        self.marker_line_start_x = None
+        self.marker_line_start_y = None
+        self.marker_line_stop_x = None
+        self.marker_line_stop_y = None
+        self.marker_line_id = None
+
+        self.active_section_drawn = False
+        self.active_section = None
+        self.active_section_glob = None
+
         self.marker = None
 
         self.create_canvas()
@@ -132,9 +143,10 @@ class ImageFrame(Frame):
         self.canvas.bind('<ButtonPress-1>', self.finish_rectangle)
 
     def set_marker_mode(self):
-        self.canvas.tag_bind(self.marker, '<Button-3>', self.select_section_marker)
-        self.canvas.tag_bind(self.marker, '<B3-Motion>', self.move_section_marker)
-        self.canvas.tag_bind(self.marker, '<ButtonRelease-3>', self.update_marker)
+        #self.canvas.tag_bind(self.marker, '<Button-3>', self.select_section_marker)
+        #self.canvas.tag_bind(self.marker, '<B3-Motion>', self.move_section_marker)
+        #self.canvas.tag_bind(self.marker, '<ButtonRelease-3>', self.update_marker)
+        return
 
     def clear_marker_mode(self):
         # Check if the marker exists before trying to unbind
@@ -216,7 +228,7 @@ class ImageFrame(Frame):
         if self.imageid:
             self.canvas.delete(self.imageid)
             self.imageid = None
-            self.canvas.photo = None  # delete previous image from the canvas
+            self.canvas.photo = None
 
         self.image_path = image_path
         self.image = Image.open(image_path)
@@ -224,13 +236,21 @@ class ImageFrame(Frame):
         new_size = int(self.scale * width), int(self.scale * height)
         photo = ImageTk.PhotoImage(self.image.resize(new_size))
 
-        # Create the image item at the stored position
         self.imageid = self.canvas.create_image(0, 0, anchor='nw', image=photo)
         self.canvas.lower(self.imageid)
-        self.canvas.photo = photo  # Save reference to avoid garbage collection
+        self.canvas.photo = photo
         self.canvas.configure(scrollregion=self.canvas.bbox('all'))
-
         self.canvas.update_idletasks()
+
+        # --- NEW: redraw overlays after image switch ---
+        if self.section_drawn:
+            self.update_canvas_objects()
+
+        if self.polyline_global_points and self.polyline_finished:
+            self.redraw_polyline()
+
+        if self.marker_drawn:
+            self.section_coor(self.marker_x, self.marker_y)
 
     def canvas_coor_to_global(self, x, y):
         self.centerx = float(self.x_coor)
@@ -314,133 +334,200 @@ class ImageFrame(Frame):
 
 
     def update_canvas_objects(self):
+        # --- Redraw all stored (non-polyline) sections ---
         for section_name, section_info in self.frame_right.sections.items():
-            if section_info['select'].get():  # Check if the section is marked as visible
+
+            if section_info.get('type') == 'polyline':
+                continue
+
+            if section_info['select'].get():
                 section_tag = f"section_line_{section_name.replace(' ', '_')}"
-                self.canvas.delete(section_tag)  # Delete the existing line for this section
+                self.canvas.delete(section_tag)
 
-                start_canvas_coords = self.global_to_canvas_coor(*section_info['start'])
-                stop_canvas_coords = self.global_to_canvas_coor(*section_info['end'])
+                start_canvas = self.global_to_canvas_coor(*section_info['start'])
+                stop_canvas = self.global_to_canvas_coor(*section_info['end'])
 
-                # Create line for each section
-                self.canvas.create_line(start_canvas_coords[0], start_canvas_coords[1],
-                                        stop_canvas_coords[0], stop_canvas_coords[1],
-                                        tags=section_tag, fill='black', width=2)
+                self.canvas.create_line(
+                    start_canvas[0], start_canvas[1],
+                    stop_canvas[0], stop_canvas[1],
+                    tags=section_tag,
+                    fill='black',
+                    width=2
+                )
 
-                # Check if there is an active section to draw
-            if self.active_section_drawn:
-                # Extract start and stop canvas coordinates from the active section
-                start_canvas_coords = self.global_to_canvas_coor(*self.active_section_glob['start'])
-                stop_canvas_coords = self.global_to_canvas_coor(*self.active_section_glob['end'])
+        # --- Redraw active section (orange) ---
+        if self.active_section_drawn and self.active_section_glob:
+            start_canvas = self.global_to_canvas_coor(*self.active_section_glob['start'])
+            stop_canvas = self.global_to_canvas_coor(*self.active_section_glob['end'])
 
-                # Clear any existing drawings related to the section
-                self.canvas.delete('stop_p', 'start_p', 'section', 'label_A', 'label_B')
+            self.canvas.delete('stop_p', 'start_p', 'section', 'label_A', 'label_B')
 
-                # Create ovals and line for the active section
-                self.canvas.create_oval(start_canvas_coords[0], start_canvas_coords[1],
-                                        start_canvas_coords[0], start_canvas_coords[1],
-                                        tags='start_p', outline='orange red', width=3)
-                self.canvas.create_oval(stop_canvas_coords[0], stop_canvas_coords[1],
-                                        stop_canvas_coords[0], stop_canvas_coords[1],
-                                        tags='stop_p', outline='orange red', width=3)
-                self.canvas.create_line(start_canvas_coords[0], start_canvas_coords[1],
-                                        stop_canvas_coords[0], stop_canvas_coords[1],
-                                        tags="section", fill='orange red', width=3)
+            self.canvas.create_oval(
+                start_canvas[0], start_canvas[1],
+                start_canvas[0], start_canvas[1],
+                tags='start_p',
+                outline='orange red',
+                width=3
+            )
+            self.canvas.create_oval(
+                stop_canvas[0], stop_canvas[1],
+                stop_canvas[0], stop_canvas[1],
+                tags='stop_p',
+                outline='orange red',
+                width=3
+            )
+            self.canvas.create_line(
+                start_canvas[0], start_canvas[1],
+                stop_canvas[0], stop_canvas[1],
+                tags='section',
+                fill='orange red',
+                width=3
+            )
 
-                self.active_section = {'start': start_canvas_coords, 'end': stop_canvas_coords}
+            # store canvas coords for interaction only
+            self.active_section = {
+                'start': start_canvas,
+                'end': stop_canvas
+            }
 
-                # Determine angle of the line
-                dx = stop_canvas_coords[0] - start_canvas_coords[0]
-                dy = stop_canvas_coords[1] - start_canvas_coords[1]
-                angle = math.atan2(dy, dx)  # Angle in radians
+            # Label orientation
+            dx = stop_canvas[0] - start_canvas[0]
+            dy = stop_canvas[1] - start_canvas[1]
+            angle = math.atan2(dy, dx)
 
-                # Determine label offset based on angle
-                label_offset_x = 20 * math.cos(angle + math.pi / 2)
-                label_offset_y = 20 * math.sin(angle + math.pi / 2)
+            label_offset_x = 20 * math.cos(angle + math.pi / 2)
+            label_offset_y = 20 * math.sin(angle + math.pi / 2)
 
-                # Add labels "A" and "B" near the start and stop points
-                self.canvas.create_text(start_canvas_coords[0] + label_offset_x, start_canvas_coords[1] + label_offset_y, text="A", tags="label_A",
-                                        fill="black", font=("Arial", 14, "bold"))
-                self.canvas.create_text(stop_canvas_coords[0] + label_offset_x, stop_canvas_coords[1] + label_offset_y,
-                                        text="B", tags="label_B",
-                                        fill="black", font=("Arial", 14, "bold"))
+            self.canvas.create_text(
+                start_canvas[0] + label_offset_x,
+                start_canvas[1] + label_offset_y,
+                text="A",
+                tags="label_A",
+                fill="black",
+                font=("Arial", 14, "bold")
+            )
+            self.canvas.create_text(
+                stop_canvas[0] + label_offset_x,
+                stop_canvas[1] + label_offset_y,
+                text="B",
+                tags="label_B",
+                fill="black",
+                font=("Arial", 14, "bold")
+            )
 
-        # Redraw marker if it exists
-        if self.marker_drawn:
+        # --- Redraw section marker (ONLY if it already exists) ---
+        if (
+                self.marker_drawn and
+                self.marker_line_id is not None and
+                self.marker_line_start_x is not None and
+                self.marker_line_start_y is not None and
+                self.marker_line_stop_x is not None and
+                self.marker_line_stop_y is not None
+        ):
             self.canvas.delete('section_p')
-            marker_point_x, marker_point_y = self.global_to_canvas_coor(self.marker_x, self.marker_y)
-            marker_line_start_x, marker_line_start_y = self.global_to_canvas_coor(self.marker_line_start_x,
-                                                                                  self.marker_line_start_y)
-            marker_line_stop_x, marker_line_stop_y = self.global_to_canvas_coor(self.marker_line_stop_x,
-                                                                                self.marker_line_stop_y)
 
-            self.canvas.create_oval(marker_point_x - 2.5, marker_point_y - 2.5, marker_point_x + 2.5,
-                                    marker_point_y + 2.5,
-                                    tags='section_p', outline='green2', width=3)
-            self.canvas.create_line(marker_line_start_x, marker_line_start_y, marker_line_stop_x, marker_line_stop_y,
-                                    tags='section_p', fill='green2', width=3)
+            # Marker point
+            marker_px, marker_py = self.global_to_canvas_coor(self.marker_x, self.marker_y)
+            self.canvas.create_oval(
+                marker_px - 2.5, marker_py - 2.5,
+                marker_px + 2.5, marker_py + 2.5,
+                tags='section_p',
+                outline='green2',
+                width=3
+            )
 
-    def section_coor(self, x, y):
+            # Marker line
+            x0, y0 = self.global_to_canvas_coor(
+                self.marker_line_start_x,
+                self.marker_line_start_y
+            )
+            x1, y1 = self.global_to_canvas_coor(
+                self.marker_line_stop_x,
+                self.marker_line_stop_y
+            )
+
+            self.canvas.coords(self.marker_line_id, x0, y0, x1, y1)
+
+
+    def section_coor(self, x, y, d=None):
+        """
+        Update marker position in the ImageFrame based on section cursor position.
+        For straight sections, use global section direction.
+        For polysections, compute local direction based on cumulative distance d.
+        """
+
         self.marker_x = x
         self.marker_y = y
+
+        # Convert marker point to canvas coordinates
         x_loc, y_loc = self.global_to_canvas_coor(x, y)
 
+        # --- Draw marker point ---
         self.canvas.delete('section_p')
         self.marker_point = self.canvas.create_oval(
-            x_loc - 2.5, y_loc - 2.5, x_loc + 2.5, y_loc + 2.5,
-            tags='section_p', outline='green2', width=3)
+            x_loc - 2.5, y_loc - 2.5,
+            x_loc + 2.5, y_loc + 2.5,
+            tags='section_p',
+            outline='green2',
+            width=3
+        )
 
-        if self.active_section:
+        # --- Marker line (perpendicular to section direction) ---
+        dx = dy = None
+
+        # Case 1: straight section (existing behaviour)
+        if self.active_section and d is None:
             start_x, start_y = self.active_section['start']
             stop_x, stop_y = self.active_section['end']
 
-            # Calculate slope of the section line
-            if stop_x == start_x:
-                section_slope = float('inf')  # Vertical line
-            else:
-                section_slope = (stop_y - start_y) / (stop_x - start_x)
+            dx = stop_x - start_x
+            dy = stop_y - start_y
 
-            # Calculate the perpendicular slope
-            if section_slope == 0:
-                perpendicular_slope = float('inf')  # Vertical line if section line is horizontal
-            elif section_slope == float('inf'):
-                perpendicular_slope = 0  # Horizontal line if section line is vertical
-            else:
-                perpendicular_slope = -1 / section_slope
+        elif d is not None and hasattr(self, 'current_section'):
+            section = self.current_section
 
-            # Length of the marker line
-            line_length = 20
+            if hasattr(section, 'get_local_direction'):
+                dx, dy = section.get_local_direction(d)
 
-            # Calculate the coordinates for the line endpoints
-            if perpendicular_slope == float('inf'):
-                # For vertical lines
-                line_x1 = x_loc
-                line_y1 = y_loc - line_length / 2
-                line_x2 = x_loc
-                line_y2 = y_loc + line_length / 2
-            elif perpendicular_slope == 0:
-                # For horizontal lines
-                line_x1 = x_loc - line_length / 2
-                line_y1 = y_loc
-                line_x2 = x_loc + line_length / 2
-                line_y2 = y_loc
-            else:
-                dx = line_length / 2 / ((1 + perpendicular_slope ** 2) ** 0.5)
-                dy = perpendicular_slope * dx
+        # --- Draw perpendicular marker line if direction is valid ---
+        if dx is not None and dy is not None:
+            length = (dx ** 2 + dy ** 2) ** 0.5
+            if length > 0:
+                dx /= length
+                dy /= length
 
-                line_x1 = x_loc - dx
-                line_y1 = y_loc - dy
-                line_x2 = x_loc + dx
-                line_y2 = y_loc + dy
+                # Perpendicular direction
+                px = -dy
+                py = dx
 
-            self.marker_line_start_x, self.marker_line_start_y = self.canvas_coor_to_global(line_x1, line_y1)
-            self.marker_line_stop_x, self.marker_line_stop_y = self.canvas_coor_to_global(line_x2, line_y2)
+                # Marker line length in canvas units
+                line_length = 20
 
-            self.marker = self.canvas.create_line(line_x1, line_y1, line_x2, line_y2, tags='section_p', fill='green2',
-                                                  width=3)
+                line_x1 = x_loc - px * line_length / 2
+                line_y1 = y_loc - py * line_length / 2
+                line_x2 = x_loc + px * line_length / 2
+                line_y2 = y_loc + py * line_length / 2
+
+                # Convert back to global coordinates for redraw-on-zoom
+                self.marker_line_start_x, self.marker_line_start_y = \
+                    self.canvas_coor_to_global(line_x1, line_y1)
+                self.marker_line_stop_x, self.marker_line_stop_y = \
+                    self.canvas_coor_to_global(line_x2, line_y2)
+
+                # Draw line
+                self.marker = self.canvas.create_line(
+                    line_x1, line_y1,
+                    line_x2, line_y2,
+                    tags='section_p',
+                    fill='green2',
+                    width=3
+                )
+
+                self.canvas.tag_bind(self.marker, '<Button-3>', self.select_section_marker)
 
         self.set_marker_mode()
         self.marker_drawn = True
+
 
     def select_section_marker(self, event):
         self.canvas.itemconfig(self.marker, fill='deep sky blue')
@@ -573,6 +660,12 @@ class ImageFrame(Frame):
 
     def update_section_visibility(self):
         for section_name, section_info in self.frame_right.sections.items():
+            section_info = self.frame_right.sections.get(section_name)
+
+            # --- GUARD: do not draw polylines as straight lines ---
+            if section_info and section_info.get('type') == 'polyline':
+                return
+
             if section_info['keep'].get():
                 if section_info['select'].get():
                     # Show the section if the 'select' checkbox is checked
@@ -583,6 +676,12 @@ class ImageFrame(Frame):
 
 
     def show_section(self, section_name, start_coords, end_coords):
+        section_info = self.frame_right.sections.get(section_name)
+
+        # --- GUARD: do not draw polylines as straight lines ---
+        if section_info and section_info.get('type') == 'polyline':
+            return
+
         self.draw_section_line(section_name, start_coords, end_coords, visible=True)
 
 
@@ -591,8 +690,16 @@ class ImageFrame(Frame):
 
         self.canvas.delete(line_tag)
 
-
     def set_active_section(self, section_name):
+        section_info = self.frame_right.sections.get(section_name)
+
+        if section_info and section_info.get('type') == 'polyline':
+            # Polysections are handled separately
+            self.active_section_drawn = False
+            self.active_section = None
+            self.active_section_glob = None
+            return
+
         if section_name in self.frame_right.sections:
             section_info = self.frame_right.sections[section_name]
 
@@ -764,15 +871,7 @@ class ImageFrame(Frame):
             )
 
     def send_polyline_to_right_frame(self, global_vertices):
-        """
-        global_vertices: list of (x, y) tuples in real-world coordinates
-        """
-        print("Polyline section vertices:")
-        for v in global_vertices:
-            print(f"  {v}")
-
-        # Later:
-        # self.frame_right.add_new_polyline_section(global_vertices)
+        self.frame_right.add_new_polysection(global_vertices)
 
 
 

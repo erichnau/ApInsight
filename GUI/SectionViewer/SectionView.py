@@ -144,6 +144,7 @@ class SectionView(tk.Toplevel):
             self.frame_right.section_view_active = False
             if self.frame_image.marker:
                 self.frame_image.clear_marker()
+                self.frame_image.marker_drawn = False
             self.top_frame.section_view_active = False
 
             self.frame_right.section_view_window = None
@@ -582,7 +583,7 @@ class SectionView(tk.Toplevel):
         return start_value, total_range, label_interval
 
     def update_depthslice_canvas(self, x, y):
-        x_coor, y_coor = self.get_xy_from_section_coor(x)
+        x_coor, y_coor, d = self.get_xy_from_section_coor(x, return_distance=True)
 
         if 'DTMfromGPR' in self.file_name:
             depth = self.get_depth_from_y_data_dtm(y)
@@ -597,7 +598,7 @@ class SectionView(tk.Toplevel):
         else:
             depth = self.get_depth_from_y_data(y)
 
-        self.frame_image.section_coor(x_coor, y_coor)
+        self.frame_image.section_coor(x_coor, y_coor, d)
         self.frame_left.update_image_selection(depth)
 
         elevation = None
@@ -612,22 +613,77 @@ class SectionView(tk.Toplevel):
         self.frame_image.coordinates_label.update_coordinates(x_coor, y_coor)
         self.section_canvas.coordinates_label.update_coordinates(x_coor, y_coor, depth=depth, elevation=elevation)
 
-    def get_xy_from_section_coor(self, x):
-        section_start = self.section.section_coor[0]  # Start point of the section
-        section_stop = self.section.section_coor[1]  # Stop point of the section
-        x /= round(self.section.section_data.shape[1] / self.section.dist)
-        # Calculate the total distance along the section
-        section_distance = ((section_stop[0] - section_start[0]) ** 2 + (
-                section_stop[1] - section_start[1]) ** 2) ** 0.5
 
-        # Calculate the ratio of the given x_data relative to the total distance
-        ratio = x / section_distance
+    def get_xy_from_section_coor(self, x, return_distance=False):
+        """
+        Convert section-view x position (in pixels) to plan-view (x, y)
+        coordinates. Optionally returns the cumulative distance d along
+        the section (used for polysection marker orientation).
+        """
 
-        # Interpolate the x and y coordinates along the section
-        x = round(section_start[0] + (section_stop[0] - section_start[0]) * ratio, 3)
-        y = round(section_start[1] + (section_stop[1] - section_start[1]) * ratio, 3)
+        # --- Convert section-view x (pixel) to distance along section ---
+        # meters per pixel in horizontal direction
+        meters_per_pixel = self.section.dist / self.section.section_data.shape[1]
 
-        return x, y
+        d = x * meters_per_pixel
+        d = max(0.0, min(d, self.section.dist))
+
+        # --- Straight section (unchanged behaviour) ---
+        if not getattr(self.section, 'is_polysection', False):
+            start = self.section.section_coor[0]
+            stop = self.section.section_coor[1]
+
+            if self.section.dist == 0:
+                x_coor, y_coor = start
+            else:
+                ratio = d / self.section.dist
+                x_coor = start[0] + (stop[0] - start[0]) * ratio
+                y_coor = start[1] + (stop[1] - start[1]) * ratio
+
+            x_coor = round(x_coor, 3)
+            y_coor = round(y_coor, 3)
+
+            if return_distance:
+                return x_coor, y_coor, d
+            return x_coor, y_coor
+
+        # --- Polysection ---
+        cum = self.section.cumulative_distances
+        segs = self.section.segment_lengths
+        verts = self.section.vertices
+
+        for i in range(len(segs)):
+            if cum[i] <= d <= cum[i + 1]:
+                local_d = d - cum[i]
+                seg_len = segs[i]
+
+                if seg_len == 0:
+                    r = 0.0
+                else:
+                    r = local_d / seg_len
+
+                x0, y0 = verts[i]
+                x1, y1 = verts[i + 1]
+
+                x_coor = x0 + r * (x1 - x0)
+                y_coor = y0 + r * (y1 - y0)
+
+                x_coor = round(x_coor, 3)
+                y_coor = round(y_coor, 3)
+
+                if return_distance:
+                    return x_coor, y_coor, d
+                return x_coor, y_coor
+
+        # --- Fallback: end of polysection ---
+        x_coor, y_coor = verts[-1]
+        x_coor = round(x_coor, 3)
+        y_coor = round(y_coor, 3)
+
+        if return_distance:
+            return x_coor, y_coor, d
+        return x_coor, y_coor
+
 
     def get_depth_from_y_data(self, y_data):
         num_rows = len(self.section.section_data)
