@@ -20,7 +20,7 @@ ApInsight is a Python-based tool designed for analyzing and visualizing ground p
 
 ### Prerequisites
 - Clone the repository or download the source code.
-- Ensure that Python 3.9 (or greater) is installed on your system. Download the latest version here: https://www.python.org/downloads/
+- Ensure that Python 3.9 - Python 3.11 is installed on your system. Download from here: https://www.python.org/downloads/
 - Recommended: Use a Python IDE like Pycharm Community Edition: https://www.jetbrains.com/pycharm/download/?section=windows
 - Install the required libraries listed in 'requirements.txt' by running **'pip install -r requirements.txt'**
 
