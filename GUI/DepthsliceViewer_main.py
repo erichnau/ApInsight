@@ -310,13 +310,35 @@ class MenuBuilder:
 
     def serialize_sections(self, sections):
         serialized_data = {}
+
         for name, info in sections.items():
-            serialized_data[name] = {
-                'select': info['select'].get(),  # Assuming this is a BooleanVar
-                'keep': info['keep'].get(),  # Assuming this is a BooleanVar
-                'start': info['start'],  # Assuming this is a list or tuple
-                'end': info['end']  # Assuming this is a list or tuple
+            record = {
+                "select": bool(info["select"].get()),
+                "keep": bool(info["keep"].get()),
+                "start": [float(value) for value in info["start"]],
+                "end": [float(value) for value in info["end"]],
             }
+
+            if info.get("type") == "polyline":
+                vertices = [
+                    [float(x), float(y)]
+                    for x, y in info["vertices"]
+                ]
+
+                if len(vertices) < 2:
+                    raise ValueError(
+                        f"{name}: a polysection needs at least two vertices."
+                    )
+
+                record.update({
+                    "type": "polyline",
+                    "vertices": vertices,
+                    "start": vertices[0],
+                    "end": vertices[-1],
+                })
+
+            serialized_data[name] = record
+
         return serialized_data
 
     def get_project_file(self):

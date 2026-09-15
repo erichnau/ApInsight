@@ -35,20 +35,53 @@ class ProjectData:
         return project_data
 
     def load_sections(self):
-        last_select_name = None
-        if self.sections_data:
-            self.frame_right.sections.clear()
-            self.frame_right.clear_all_sections()
+        # Destroy existing section widgets before clearing their records.
+        self.frame_right.clear_all_sections()
 
-            for section_name, section_info in self.sections_data.items():
-                start_coords = tuple(section_info['start'])
-                end_coords = tuple(section_info['end'])
-                select = section_info['select']
-                self.frame_right.add_section(start_coords, end_coords, section_name, from_json=True, select=select)
-                if select:
-                    last_select_name = section_name
-            if last_select_name:
-                self.frame_right.focus_section(last_select_name)
+        last_selected_name = None
+
+        for section_name, section_info in self.sections_data.items():
+            select = bool(section_info.get("select", True))
+            keep = bool(section_info.get("keep", True))
+
+            if section_info.get("type") == "polyline":
+                self.frame_right.add_polysection(
+                    vertices=section_info["vertices"],
+                    section_name=section_name,
+                    select=select,
+                    keep=keep,
+                )
+            else:
+                # Older project files contain ordinary sections
+                # without an explicit type.
+                start_coords = tuple(
+                    float(value) for value in section_info["start"]
+                )
+                end_coords = tuple(
+                    float(value) for value in section_info["end"]
+                )
+
+                self.frame_right.add_section(
+                    start_coords,
+                    end_coords,
+                    section_name,
+                    from_json=True,
+                    select=select,
+                )
+
+                # add_section() currently checks Keep for every
+                # JSON import. Restore the actual saved value.
+                self.frame_right.sections[section_name]["keep"].set(keep)
+
+            if select:
+                last_selected_name = section_name
+
+        self.frame_right.update_sections_button_states()
+
+        if last_selected_name is not None:
+            self.frame_right.focus_section(last_selected_name)
+
+        self.frame_right.frame_image.redraw_polyline()
 
     def clear_project(self):
         self.projects = []

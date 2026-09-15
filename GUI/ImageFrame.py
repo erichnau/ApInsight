@@ -184,8 +184,7 @@ class ImageFrame(Frame):
         if self.section_drawn:
             self.update_canvas_objects()
 
-        if self.polyline_global_points and self.polyline_finished:
-            self.redraw_polyline()
+        self.redraw_polyline()
 
     def set_zoom(self, zoom):
         self.scale = zoom
@@ -246,8 +245,7 @@ class ImageFrame(Frame):
         if self.section_drawn:
             self.update_canvas_objects()
 
-        if self.polyline_global_points and self.polyline_finished:
-            self.redraw_polyline()
+        self.redraw_polyline()
 
         if self.marker_drawn:
             self.section_coor(self.marker_x, self.marker_y)
@@ -620,7 +618,8 @@ class ImageFrame(Frame):
             'label_A', 'label_B',
             'polyline_vertex',
             'polyline_segment',
-            'polyline_preview'
+            'polyline_preview',
+            "stored_polysection"
         )
 
         self.active_section_drawn = False
@@ -636,6 +635,11 @@ class ImageFrame(Frame):
 
 
     def draw_section_line(self, section_name, start_coords, end_coords, visible=True):
+        section_info = self.frame_right.sections.get(section_name)
+        if section_info and section_info.get("type") == "polyline":
+            self.redraw_polyline()
+            return
+
         if visible:
             # Using underscore to concatenate the strings
             line_tag = f"section_line_{section_name.replace(' ', '_')}"
@@ -657,22 +661,20 @@ class ImageFrame(Frame):
         else:
             self.hide_section(section_name)
 
-
     def update_section_visibility(self):
         for section_name, section_info in self.frame_right.sections.items():
-            section_info = self.frame_right.sections.get(section_name)
+            if section_info.get("type") == "polyline":
+                continue
 
-            # --- GUARD: do not draw polylines as straight lines ---
-            if section_info and section_info.get('type') == 'polyline':
-                return
+            if section_info["keep"].get():
+                self.update_section_line(
+                    section_name,
+                    section_info["start"],
+                    section_info["end"],
+                    section_info["select"].get(),
+                )
 
-            if section_info['keep'].get():
-                if section_info['select'].get():
-                    # Show the section if the 'select' checkbox is checked
-                    self.show_section(section_name, section_info['start'], section_info['end'])
-                else:
-                    # Hide the section if the 'select' checkbox is not checked
-                    self.hide_section(section_name)
+        self.redraw_polyline()
 
 
     def show_section(self, section_name, start_coords, end_coords):
@@ -686,8 +688,7 @@ class ImageFrame(Frame):
 
 
     def hide_section(self, section_name):
-        line_tag = f"section_line_{section_name}"
-
+        line_tag = f"section_line_{section_name.replace(' ', '_')}"
         self.canvas.delete(line_tag)
 
     def set_active_section(self, section_name):
@@ -832,43 +833,60 @@ class ImageFrame(Frame):
         # Hand off polyline (stub for now)
         self.send_polyline_to_right_frame(self.polyline_global_points)
 
+        self.redraw_polyline()
 
     def redraw_polyline(self):
-        if not self.polyline_global_points or len(self.polyline_global_points) < 2:
-            return
+        """Redraw all visible, completed polysections from RightFrame."""
+        self.canvas.delete("stored_polysection")
 
-        # Remove existing polyline drawings
-        self.canvas.delete('polyline_vertex')
-        self.canvas.delete('polyline_segment')
-        self.canvas.delete('polyline_preview')
+        # Preserve temporary drawing graphics while a new line is drawn.
+        if not self.draw_polyline_mode:
+            self.canvas.delete("polyline_vertex")
+            self.canvas.delete("polyline_segment")
+            self.canvas.delete("polyline_preview")
 
-        # Convert all global points back to canvas coords
-        canvas_points = [
-            self.global_to_canvas_coor(x, y)
-            for x, y in self.polyline_global_points
-        ]
+        focused_name = self.frame_right.get_focused_section_name()
 
-        # Draw segments
-        for i in range(1, len(canvas_points)):
-            x1, y1 = canvas_points[i - 1]
-            x2, y2 = canvas_points[i]
+        for name, info in self.frame_right.sections.items():
+            if info.get("type") != "polyline":
+                continue
+            if not info["select"].get():
+                continue
+
+            vertices = info.get("vertices", [])
+            if len(vertices) < 2:
+                continue
+
+            points = [
+                self.global_to_canvas_coor(float(x), float(y))
+                for x, y in vertices
+            ]
+            coordinates = [
+                coordinate
+                for point in points
+                for coordinate in point
+            ]
+
+            focused = name == focused_name
+            colour = "orange red" if focused else "black"
+            section_tag = f"section_line_{name.replace(' ', '_')}"
+            tags = ("stored_polysection", section_tag)
+
             self.canvas.create_line(
-                x1, y1, x2, y2,
-                fill='orange red',
-                width=3,
-                tags='polyline_segment'
+                *coordinates,
+                fill=colour,
+                width=3 if focused else 2,
+                tags=tags,
             )
 
-        # Draw vertices
-        for x, y in canvas_points:
-            r = 3
-            self.canvas.create_oval(
-                x - r, y - r,
-                x + r, y + r,
-                fill='orange red',
-                outline='orange red',
-                tags='polyline_vertex'
-            )
+            if focused:
+                for x, y in points:
+                    self.canvas.create_oval(
+                        x - 3, y - 3, x + 3, y + 3,
+                        fill=colour,
+                        outline=colour,
+                        tags=tags,
+                    )
 
     def send_polyline_to_right_frame(self, global_vertices):
         self.frame_right.add_new_polysection(global_vertices)
