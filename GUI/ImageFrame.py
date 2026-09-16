@@ -278,6 +278,10 @@ class ImageFrame(Frame):
 
         img_x, img_y = self.canvas_coor_to_global(can_x, can_y)
         self.coordinates_label.update_coordinates(img_x, img_y)  # Update using the new method
+        # Independent ApPPD views; preserve the existing section-view lifecycle.
+        for link in tuple(getattr(self, 'ap_ppd_cursor_links', ())):
+            link.map_position(img_x, img_y)
+
 
     def start_section(self, event):
         if self.draw_section_mode:

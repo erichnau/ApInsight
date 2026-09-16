@@ -302,102 +302,95 @@ class FldData:
         return dist, valid_section_data, depth_m, self.pixelsize_z, self.data_type, top_removed, bottom_removed, self.depth_table
 
 
+    def _sample_fld_course(self, course, batch_size=512):
+        """Bilinear sampling of the existing grid, without copying the volume.
+
+        Uses actual x/y coordinates (including descending axes). NaN corners
+        propagate, matching the existing linear-interpolation semantics.
+        """
+        dataset = self.fld_dset.transpose('z', 'y', 'x')
+        x = np.asarray(dataset.x.values, dtype=float)
+        y = np.asarray(dataset.y.values, dtype=float)
+        values = dataset.data
+        # Preserve xarray support for unusual grids and non-NumPy backends.
+        regular = (len(x) >= 2 and len(y) >= 2 and
+                   np.isfinite(x).all() and np.isfinite(y).all() and
+                   (np.all(np.diff(x) > 0) or np.all(np.diff(x) < 0)) and
+                   (np.all(np.diff(y) > 0) or np.all(np.diff(y) < 0)))
+        if not isinstance(values, np.ndarray) or not regular:
+            return np.asarray(dataset.interp(
+                x=('along_course', course[:, 0]),
+                y=('along_course', course[:, 1]), method='linear'))
+        if x[0] > x[-1]:
+            x = x[::-1]
+            values = values[:, :, ::-1]
+        if y[0] > y[-1]:
+            y = y[::-1]
+            values = values[:, ::-1, :]
+        result = np.full((values.shape[0], len(course)), np.nan, dtype=float)
+        valid = (np.isfinite(course).all(axis=1) &
+                 (course[:, 0] >= x[0]) & (course[:, 0] <= x[-1]) &
+                 (course[:, 1] >= y[0]) & (course[:, 1] <= y[-1]))
+        columns = np.flatnonzero(valid)
+        for start in range(0, len(columns), batch_size):
+            col = columns[start:start + batch_size]
+            px, py = course[col].T
+            ix = np.clip(np.searchsorted(x, px, side='right') - 1, 0, len(x)-2)
+            iy = np.clip(np.searchsorted(y, py, side='right') - 1, 0, len(y)-2)
+            wx = (px-x[ix]) / (x[ix+1]-x[ix])
+            wy = (py-y[iy]) / (y[iy+1]-y[iy])
+            # Floating conversion also avoids integer subtraction overflow.
+            a = values[:, iy, ix].astype(float)
+            b = values[:, iy, ix+1].astype(float)
+            c = values[:, iy+1, ix].astype(float)
+            e = values[:, iy+1, ix+1].astype(float)
+            low = a + wx * (b-a)
+            high = c + wx * (e-c)
+            result[:, col] = low + wy * (high-low)
+        return result
+
     def create_arbitrary_sections(self, vertices):
-        """
-        Create an arbitrary section along a polyline defined by vertices.
-        vertices: list of (x, y) tuples in global coordinates
-        """
-
-        if len(vertices) < 2:
-            raise ValueError("At least two vertices are required for a polysection.")
-
-        # Pixel size handling (same as before)
+        """Sample all polyline segments together; retain legacy output layout."""
+        vertices = np.asarray(vertices, dtype=float)
+        if (vertices.ndim != 2 or vertices.shape[1] != 2 or
+                len(vertices) < 2 or not np.isfinite(vertices).all()):
+            raise ValueError('Expected at least two finite x/y vertices.')
         if self.data_type == 2:
             self.pixelsize_z = 0.01
-
-        section_segments = []
-        dist_segments = []
-
+        if not np.isfinite(self.pixelsize_z) or self.pixelsize_z <= 0:
+            raise ValueError('Sampling interval must be positive.')
+        courses = []
         total_dist = 0.0
-
-        # Loop over each segment
-        for i in range(len(vertices) - 1):
-            start_x, start_y = vertices[i]
-            stop_x, stop_y = vertices[i + 1]
-
-            # Segment distance
-            dist = np.sqrt((start_x - stop_x) ** 2 + (start_y - stop_y) ** 2)
+        for first, last in zip(vertices[:-1], vertices[1:]):
+            dist = np.linalg.norm(last-first)
             if dist == 0:
                 continue
-
+            # Deliberately preserve the previous number and positions of samples.
             n = max(2, round(dist / self.pixelsize_z))
-
-            course = np.column_stack((
-                np.linspace(start_x, stop_x, n),
-                np.linspace(start_y, stop_y, n)
-            ))
-
-            segment = self.fld_dset.interp(
-                x=('along_course', course[:, 0]),
-                y=('along_course', course[:, 1]),
-                method='linear'
-            )
-
-            segment_data = np.array(segment)
-
-            # Remove first column for all but the first segment (avoid duplicates)
-            if section_segments:
-                segment_data = segment_data[:, 1:]
-
-            section_segments.append(segment_data)
-            dist_segments.append(dist)
-
+            course = np.column_stack((np.linspace(first[0], last[0], n),
+                                      np.linspace(first[1], last[1], n)))
+            courses.append(course[1:] if courses else course)
             total_dist += dist
-
-        # Concatenate all segments horizontally
-        full_section = np.concatenate(section_segments, axis=1)
-
-        # Filter invalid rows (same logic as before)
+        if not courses:
+            raise ValueError('The polysection has zero length.')
+        full_section = self._sample_fld_course(np.concatenate(courses, axis=0))
         valid_section_data = filter_nan_and_zero_rows(full_section)
-
-        # --- DTM handling (unchanged logic, just applied once) ---
+        if valid_section_data.shape[0] == 0:
+            return (total_dist, valid_section_data, 0.0, self.pixelsize_z,
+                    self.data_type, None, None, self.depth_table)
         if 'DTMfromGPR' in self.file_name:
-            rows_to_keep = ~np.all(
-                np.isnan(full_section) | (full_section == 0),
-                axis=1
-            )
-
+            rows_to_keep = ~np.all(np.isnan(full_section) | (full_section == 0), axis=1)
             top_removed = np.argmax(rows_to_keep)
-            bottom_removed = (
-                    full_section.shape[0]
-                    - (len(rows_to_keep) - np.argmax(rows_to_keep[::-1]))
-                    - top_removed
-                    - self.bottom_zeros
-            )
-        else:
-            top_removed = None
-            bottom_removed = None
-
-        # --- Depth calculation ---
-        if 'DTMfromGPR' in self.file_name:
+            bottom_removed = (full_section.shape[0] -
+                (len(rows_to_keep) - np.argmax(rows_to_keep[::-1])) -
+                top_removed - self.bottom_zeros)
             depth_m = self.pixelsize_z * valid_section_data.shape[0]
         else:
-            depth_m = abs(
-                self.depth_table[valid_section_data.shape[0] - 1][0]
-                + self.depth_table[valid_section_data.shape[0] - 1][1]
-            )
-
-        return (
-            total_dist,
-            valid_section_data,
-            depth_m,
-            self.pixelsize_z,
-            self.data_type,
-            top_removed,
-            bottom_removed,
-            self.depth_table
-        )
-
+            top_removed = bottom_removed = None
+            depth_m = abs(self.depth_table[valid_section_data.shape[0]-1][0] +
+                          self.depth_table[valid_section_data.shape[0]-1][1])
+        return (total_dist, valid_section_data, depth_m, self.pixelsize_z,
+                self.data_type, top_removed, bottom_removed, self.depth_table)
 
     def create_3d_subset(self, coordinates):
         # Retrieve the corner points of the rectangle from self.rectangle_data

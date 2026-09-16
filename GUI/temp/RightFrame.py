@@ -4,15 +4,12 @@ import time
 import os
 import re
 import shapefile
-import numpy as np
 
 
 from GUI.error_handling import show_error_dialog
 from GPR_func._2D_vertical import check_section_array
-from GPR_func.ap_ppd.ap_ppd_tools import export_folder_trace_coordinates, extract_ap_ppd_trace_coordinates_from_section, test_section_extraction_methods, create_ap_ppd_section_comparison
 
 from GUI.SectionViewer.SectionView import SectionView
-from GUI.SectionViewer.ApPPDSectionView import ApPPDSectionView
 from data.ProjectData import ArbSectionData
 
 
@@ -30,15 +27,10 @@ class RightFrame(Frame):
 
         self.project_data = project_data
         self.project_file = None
-        self.ap_ppd_file = None
-        self.ap_ppd_folder = None
         self.sections = {}
         self.section_count = 1
         self.total_section_count = 1
 
-        self.ap_ppd_trace_index = None
-        self.active_ap_ppd_polysection_name = None
-        self.active_ap_ppd_vertices = None
 
         self.section_view_window = None
         self.section_view_active = False
@@ -61,14 +53,6 @@ class RightFrame(Frame):
         self.clear_section_button = Button(buttons_frame_top, text='Clear Section', state='disabled',
                                            command=self.clear_section)
         self.clear_section_button.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
-
-        # Select an ApPPD file for creating a polysection
-        self.ap_ppd_button = Button(
-            buttons_frame_top,
-            text='Polysection from apppd',
-            command=self.select_ap_ppd_file
-        )
-        self.ap_ppd_button.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
 
         # Configure the column weights for buttons frame top
         buttons_frame_top.grid_columnconfigure(0, weight=1)
@@ -226,219 +210,6 @@ class RightFrame(Frame):
         self.project_file = project_file
         if self.project_file is not None:
             self.import_button['state'] = 'normal'
-
-    def select_ap_ppd_file(self):
-        """
-        Select an ApPPD folder, load or create its trace index,
-        and retrieve the focused polysection.
-        """
-
-        # ---------------------------------------------------------
-        # 1. Retrieve the focused section
-        # ---------------------------------------------------------
-
-        section_name = self.get_focused_section_name()
-
-        if section_name is None:
-            show_error_dialog(
-                "No section is currently focused."
-            )
-            return
-
-        section_info = self.sections.get(section_name)
-
-        if section_info is None:
-            show_error_dialog(
-                "The focused section could not be found."
-            )
-            return
-
-        if section_info.get("type") != "polyline":
-            show_error_dialog(
-                "The focused section is not a polysection."
-            )
-            return
-
-        vertices = section_info.get("vertices")
-
-        if not vertices or len(vertices) < 2:
-            show_error_dialog(
-                "The focused polysection has too few vertices."
-            )
-            return
-
-        # ---------------------------------------------------------
-        # 2. Select one ApPPD file to identify the folder
-        # ---------------------------------------------------------
-
-        initial_dir = (
-            os.path.dirname(self.project_file)
-            if self.project_file
-            else None
-        )
-
-        filepath = filedialog.askopenfilename(
-            initialdir=initial_dir,
-            title="Select one ap_ppd file from project",
-            filetypes=[
-                (
-                    "ApPPD files",
-                    (
-                        "*.ap_ppd",
-                        "*.apPPD",
-                        "*.apppd",
-                        "*.APPPD"
-                    )
-                ),
-                ("All files", "*.*")
-            ]
-        )
-
-        if not filepath:
-            return
-
-        self.ap_ppd_file = filepath
-        self.ap_ppd_folder = os.path.dirname(filepath)
-
-        index_path = os.path.join(
-            self.ap_ppd_folder,
-            "ap_ppd_trace_index.npy"
-        )
-
-        # ---------------------------------------------------------
-        # 3. Reuse or rebuild the trace index
-        # ---------------------------------------------------------
-
-        rebuild_index = True
-
-        if os.path.exists(index_path):
-            use_existing = messagebox.askyesno(
-                "ApPPD trace index found",
-                "An existing ap_ppd_trace_index.npy file was found.\n\n"
-                "Do you want to use the existing index?\n\n"
-                "Select No to rebuild it."
-            )
-
-            rebuild_index = not use_existing
-
-        if rebuild_index:
-            try:
-                print("Creating ApPPD trace index...")
-
-                # Release the previously loaded index before overwriting it.
-                old_index = getattr(self, "ap_ppd_trace_index", None)
-                self.ap_ppd_trace_index = None
-
-                if isinstance(old_index, np.memmap):
-                    mapping = getattr(old_index, "_mmap", None)
-                    if mapping is not None:
-                        mapping.close()
-
-                del old_index
-
-                export_folder_trace_coordinates(
-                    self.ap_ppd_folder
-                )
-
-            except Exception as exc:
-                show_error_dialog(
-                    f"Could not create the ApPPD trace index:\n{exc}"
-                )
-                return
-
-        # Make sure index creation actually succeeded
-        if not os.path.exists(index_path):
-            show_error_dialog(
-                "The ApPPD trace index was not created."
-            )
-            return
-
-        # ---------------------------------------------------------
-        # 4. Load the index
-        # ---------------------------------------------------------
-
-        try:
-            self.ap_ppd_trace_index = np.load(
-                index_path,
-                mmap_mode="r"
-            )
-
-        except Exception as exc:
-            show_error_dialog(
-                f"Could not load the ApPPD trace index:\n{exc}"
-            )
-            return
-
-        # ---------------------------------------------------------
-        # 5. Store the active polysection geometry
-        # ---------------------------------------------------------
-
-        self.active_ap_ppd_polysection_name = section_name
-        self.active_ap_ppd_vertices = vertices
-
-        print(f"ApPPD section: {section_name}", flush=True)
-
-        try:
-            (
-                self.ap_ppd_section_traces,
-                self.ap_ppd_section_distances,
-            ) = extract_ap_ppd_trace_coordinates_from_section(
-                trace_index=self.ap_ppd_trace_index,
-                vertices=self.active_ap_ppd_vertices,
-                output_folder=self.ap_ppd_folder,
-                section_name=self.active_ap_ppd_polysection_name,
-                max_distance=0.50,
-            )
-
-        except Exception as exc:
-            show_error_dialog(
-                f"Could not extract trace coordinates:\n{exc}"
-            )
-            return
-
-        self.ap_ppd_sampling = test_section_extraction_methods(
-            traces=self.ap_ppd_section_traces,
-            vertices=self.active_ap_ppd_vertices,
-            output_folder=self.ap_ppd_folder,
-            section_name=self.active_ap_ppd_polysection_name,
-            spacing=0.05,
-            max_nearest_distance=0.20,
-            max_triangle_edge=0.35,
-        )
-
-        try:
-            self.ap_ppd_sections = create_ap_ppd_section_comparison(
-                traces=self.ap_ppd_section_traces,
-                sampling=self.ap_ppd_sampling,
-                folder_path=self.ap_ppd_folder,
-                section_name=self.active_ap_ppd_polysection_name,
-                clip_percentile=99.0,
-                selected_workflow=True,
-                selected_second_pass=True,
-                diagnostics=False,
-                selected_gain_tracks=(
-                    (85, 125, 95),
-                    (130, 175, 140),
-                ),
-            )
-        except Exception as exc:
-            show_error_dialog(f"Could not process ApPPD section:\n{exc}")
-            return
-
-        try:
-            previous = getattr(self, "ap_ppd_view_window", None)
-            if previous is not None and previous.winfo_exists():
-                previous.destroy()
-            self.ap_ppd_view_window = ApPPDSectionView(
-                master=self,
-                sections=self.ap_ppd_sections,
-                title=self.active_ap_ppd_polysection_name,
-                image_frame=self.frame_image,
-                vertices=self.active_ap_ppd_vertices,
-            )
-
-        except Exception as exc:
-            show_error_dialog(f"Could not open ApPPD section:\n{exc}")
 
     def create_arbitrary_section(self):
         # Close an existing SectionView window if present
@@ -785,23 +556,14 @@ class RightFrame(Frame):
 
     def focus_section(self, section_name):
         # Call ImageFrame's method to focus on the section
-        if self.sections[section_name].get("type") == "polyline":
-            self.sections[section_name]["select"].set(True)
+        if self.sections[section_name].get('type') == 'polyline':
+            self.sections[section_name]['select'].set(True)
 
-            # Clear the previously active straight-section overlay.
-            self.frame_image.set_active_section(section_name)
-            self.frame_image.canvas.delete(
-                "section", "section_p",
-                "start_p", "stop_p", "label_A", "label_B",
-            )
-
+            # highlight frame only
             for info in self.sections.values():
-                info["frame"].config(bg=self.default_bg)
+                info['frame'].config(bg=self.default_bg)
 
-            self.sections[section_name]["frame"].config(bg="blue")
-            self.frame_image.redraw_polyline()
-            self.update_sections_button_states()
-            self.scroll_to_frame(self.sections[section_name]["frame"])
+            self.sections[section_name]['frame'].config(bg='blue')
             return
 
 
@@ -987,18 +749,7 @@ class RightFrame(Frame):
 
             for section_name, section_info in sections.items():
                 # Define the line with start and stop coordinates
-                if section_info.get("type") == "polyline":
-                    vertices = section_info["vertices"]
-                else:
-                    vertices = [
-                        section_info["start"],
-                        section_info["end"],
-                    ]
-
-                line = [[
-                    (float(x), float(y))
-                    for x, y in vertices
-                ]]
+                line = [[section_info['start'], section_info['end']]]
 
                 # Add the line and record to the shapefile
                 shp.line(line)
@@ -1007,170 +758,77 @@ class RightFrame(Frame):
         print(f"Exported all selected sections to {filepath}")
 
     def import_shapefile(self):
-        filepath = filedialog.askopenfilename(
-            title="Import section lines",
-            filetypes=[("Shapefiles", "*.shp")],
-        )
-        if not filepath:
-            return
-
-        # Read and validate before changing the viewer.
-        pending = []
-
-        try:
-            with shapefile.Reader(filepath) as shp:
-                fields = [field[0].upper() for field in shp.fields[1:]]
-                name_index = fields.index("NAME") if "NAME" in fields else None
-
-                for item in shp.iterShapeRecords():
-                    shape = item.shape
-
-                    if shape.shapeType not in (
-                        shapefile.POLYLINE,
-                        shapefile.POLYLINEZ,
-                        shapefile.POLYLINEM,
-                    ):
-                        continue
-
-                    saved_name = ""
-                    if name_index is not None:
-                        value = item.record[name_index]
-                        if value is not None:
-                            saved_name = str(value).strip()
-
-                    # Never connect separate parts across a gap.
-                    boundaries = list(shape.parts) + [len(shape.points)]
-
-                    for start, stop in zip(boundaries[:-1], boundaries[1:]):
-                        vertices = [
-                            (float(point[0]), float(point[1]))
-                            for point in shape.points[start:stop]
-                        ]
-
-                        if len(vertices) < 2:
-                            continue
-
-                        xy = np.asarray(vertices, dtype=float)
-                        if not np.isfinite(xy).all():
-                            continue
-
-                        if not np.any(np.diff(xy, axis=0)):
-                            continue
-
-                        pending.append((saved_name, vertices))
-
-        except (OSError, shapefile.ShapefileException, ValueError) as exc:
-            show_error_dialog(f"Could not read section shapefile:\n{exc}")
-            return
-
-        if not pending:
-            show_error_dialog(
-                "The shapefile contains no valid lines with at least two points."
-            )
-            return
-
         if self.section_view_active:
-            proceed = messagebox.askyesno(
+            # Show warning dialog
+            response = messagebox.askyesno(
                 "Warning",
-                "Importing sections will close the open section view. Continue?",
-                icon="warning",
+                "Another section view is open. Continuing with the import will close this window. Would you like to continue?",
+                icon='warning'
             )
-            if not proceed:
+            if not response:
+                # User chose 'No', so cancel the import
                 return
-            self.clear_section()
-
-        last_name = None
-        imported = 0
-
-        for saved_name, vertices in pending:
-            # Preserve the Polysection type even for a two-vertex
-            # polysection exported by this application.
-            is_polyline = (
-                len(vertices) > 2
-                or saved_name.lower().startswith("polysection")
-            )
-
-            # Compare complete geometry, not just endpoints.
-            existing_name = None
-            for name, info in self.sections.items():
-                existing = (
-                    info["vertices"]
-                    if info.get("type") == "polyline"
-                    else [info["start"], info["end"]]
-                )
-                existing = [
-                    (float(x), float(y)) for x, y in existing
-                ]
-
-                same_type = (
-                    info.get("type") == "polyline"
-                ) == is_polyline
-
-                if same_type and (
-                    existing == vertices
-                    or existing == vertices[::-1]
-                ):
-                    existing_name = name
-                    break
-
-            if existing_name is not None:
-                self.sections[existing_name]["select"].set(True)
-                last_name = existing_name
-                continue
-
-            # Keep the application's numeric naming convention:
-            # other methods rely on it.
-            prefix = "Polysection" if is_polyline else "Section"
-            pattern = rf"{prefix} \d+"
-
-            if (
-                re.fullmatch(pattern, saved_name)
-                and saved_name not in self.sections
-            ):
-                section_name = saved_name
             else:
-                number = 1
-                while f"{prefix} {number}" in self.sections:
-                    number += 1
-                section_name = f"{prefix} {number}"
+                self.clear_section()
 
-            if is_polyline:
-                self.add_polysection(
-                    vertices=vertices,
-                    section_name=section_name,
-                    select=True,
-                    keep=True,
-                )
+        filepath = filedialog.askopenfilename(filetypes=[("Shapefiles", "*.shp")])
+        if not filepath:
+            # User cancelled the file selection
+            return
+
+        with shapefile.Reader(filepath) as shp:
+            # Check for exported shapefile structure
+            fields = [field[0] for field in shp.fields[1:]]  # Skip the deletion flag field
+            is_exported_shapefile = 'NAME' in fields
+
+            # Check records for specific naming pattern
+            if is_exported_shapefile:
+                for record in shp.iterRecords():
+                    if not re.match(r'Section \d{1,2}', record[0]):
+                        is_exported_shapefile = False
+                        break
+
+            if is_exported_shapefile:
+                valid_lines_found = False
+                for shapeRecord in shp.iterShapeRecords():
+                    # Check if the shape is a line with exactly two points
+                    if len(shapeRecord.shape.points) == 2:
+                        start_coords, end_coords = shapeRecord.shape.points
+                        # Extract the section name from the 'NAME' field in the record
+
+                        section_name = shapeRecord.record[0]  # Assuming 'NAME' is the first field
+                        if not re.match(r"Section \d{1,2}$", section_name):
+                            section_name = self.generate_new_section_name()
+
+                        start_coords, end_coords = shapeRecord.shape.points
+
+                        if self.does_section_exist(start_coords, end_coords):
+                            valid_lines_found = True
+                            continue
+
+                        self.add_section(start_coords, end_coords, section_name, from_shp=True)
+                        valid_lines_found = True
+
+                if not valid_lines_found:
+                    show_error_dialog("Selected shapefile does not contain any valid lines consisting of only two points.")
+                    return
+
             else:
-                self.add_section(
-                    vertices[0],
-                    vertices[-1],
-                    section_name,
-                    from_shp=True,
-                    select=True,
-                )
+                valid_lines_found = False
+                for shapeRecord in shp.iterShapeRecords():
+                    # Check if the shape is a line with exactly two points
+                    if len(shapeRecord.shape.points) == 2:
+                        start_coords, end_coords = shapeRecord.shape.points
+                        section_name = self.generate_new_section_name()
+                        self.add_section(start_coords, end_coords, section_name, from_shp=True)
+                        valid_lines_found = True
 
-            last_name = section_name
-            imported += 1
+                if not valid_lines_found:
+                    show_error_dialog("Selected shapefile does not contain any valid lines consisting of only two points.")
+                    return
 
-        # Draw straight sections through their existing renderer.
-        for name, info in self.sections.items():
-            if info.get("type") != "polyline":
-                self.frame_image.update_section_line(
-                    name,
-                    info["start"],
-                    info["end"],
-                    info["select"].get(),
-                )
-
-        # Draw polylines using all their vertices.
-        self.frame_image.redraw_polyline()
-        self.update_sections_button_states()
-
-        if last_name is not None:
-            self.focus_section(last_name)
-
-        print(f"Imported {imported} new section(s) from '{filepath}'")
+            self.show_all_sections()
+            print(f"Imported shapefile '{filepath}'")
 
     def generate_new_section_name(self):
         base_name = "Section"
@@ -1229,28 +887,7 @@ class RightFrame(Frame):
         self.update_sections()
         self.scroll_to_bottom()
 
-    def add_polysection(
-            self, vertices, section_name, select=True, keep=True
-    ):
-
-        # Store an independent copy using ordinary Python floats.
-        coordinates = np.asarray(vertices, dtype=float)
-
-        if (
-                coordinates.ndim != 2
-                or coordinates.shape[0] < 2
-                or coordinates.shape[1] != 2
-                or not np.isfinite(coordinates).all()
-        ):
-            raise ValueError(
-                "A polysection needs at least two finite XY coordinate pairs."
-            )
-
-        vertices = [
-            (float(x), float(y))
-            for x, y in coordinates
-        ]
-
+    def add_polysection(self, vertices, section_name):
         bold_font = font.Font(weight="bold", size=10)
 
         frame = tk.Frame(self.scrollable_frame)
@@ -1260,7 +897,7 @@ class RightFrame(Frame):
         label.pack(side='left', padx=5)
 
         # Visible checkbox
-        select_var = tk.BooleanVar(value=select)
+        select_var = tk.BooleanVar(value=True)
         tk.Label(frame, text="Visible").pack(side='left', padx=(5, 0))
         select_checkbox = tk.Checkbutton(
             frame,
@@ -1268,9 +905,10 @@ class RightFrame(Frame):
             command=lambda: self.on_select_toggle(section_name)
         )
         select_checkbox.pack(side='left', padx=(0, 5))
+        select_checkbox.select()
 
         # Keep checkbox
-        keep_var = tk.BooleanVar(value=keep)
+        keep_var = tk.BooleanVar()
         keep_checkbox = tk.Checkbutton(
             frame,
             text='Keep',

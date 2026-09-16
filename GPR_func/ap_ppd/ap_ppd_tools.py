@@ -1,4 +1,4 @@
-# ApPPD tools — selected workflow revision 16 (2026-09-16).
+# ApPPD tools — selected workflow revision 17 (2026-09-16).
 # Full replacement module; existing extraction and reader interfaces retained.
 # Joint source statics/window trends, final rollback checks, always-on numeric snapshot.
 import numpy as np
@@ -1610,10 +1610,25 @@ def create_ap_ppd_section_comparison(
 
     if selected_workflow:
         safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in section_name) or "polysection"
-        return run_ap_ppd_selected_workflow(source_data, traces[required_rows], required_rows,
+        result = run_ap_ppd_selected_workflow(source_data, traces[required_rows], required_rows,
             sampling, os.path.join(folder_path,safe_name), gain_tracks=selected_gain_tracks,
             second_pass=selected_second_pass, source_gain_enabled=selected_source_gain, diagnostics=diagnostics,
             clip_percentile=clip_percentile)
+        # ApPPD acquisition window is treated as N sample intervals, in ns.
+        result['sample_interval_ns'] = float(reference_header['time_window']) / int(reference_header['points_per_trace'])
+        heights = np.full(len(distances), np.nan)
+        spread = np.full(len(distances), np.nan)
+        for col in np.flatnonzero(triangle_valid):
+            weights = triangle_weights[col]
+            contributing = weights > 0
+            zz = traces['z'][triangle_indices[col][contributing]]
+            if np.isfinite(zz).all():
+                heights[col] = weights[contributing] @ zz
+                spread[col] = np.ptp(zz)
+        result['surface_elevation'] = heights
+        result['surface_elevation_spread'] = spread
+        result['height_source'] = 'Triangle-weighted source z; vertical datum/antenna offset must be checked'
+        return result
 
     aligned_source_data, time_zero_reference, time_zero_shifts = (
         align_ap_ppd_source_time_zero(
