@@ -9,7 +9,6 @@ import numpy as np
 
 from GUI.error_handling import show_error_dialog
 from GPR_func._2D_vertical import check_section_array
-from GPR_func.ap_ppd.ApPPDReader import ApPPDReader
 from GPR_func.ap_ppd.ap_ppd_tools import export_folder_trace_coordinates, extract_ap_ppd_trace_coordinates_from_section, test_section_extraction_methods, create_ap_ppd_section_comparison
 
 from GUI.SectionViewer.SectionView import SectionView
@@ -376,13 +375,7 @@ class RightFrame(Frame):
         self.active_ap_ppd_polysection_name = section_name
         self.active_ap_ppd_vertices = vertices
 
-        print("\n--- ApPPD polysection input ---")
-        print(f"Section: {section_name}")
-        print(f"Vertices: {len(vertices)}")
-        print(f"Coordinates: {vertices}")
-        print(f"Index: {index_path}")
-        print(f"Indexed traces: {len(self.ap_ppd_trace_index)}")
-        print(f"Index fields: {self.ap_ppd_trace_index.dtype.names}")
+        print(f"ApPPD section: {section_name}", flush=True)
 
         try:
             (
@@ -412,13 +405,25 @@ class RightFrame(Frame):
             max_triangle_edge=0.35,
         )
 
-        self.ap_ppd_sections = create_ap_ppd_section_comparison(
-            traces=self.ap_ppd_section_traces,
-            sampling=self.ap_ppd_sampling,
-            folder_path=self.ap_ppd_folder,
-            section_name=self.active_ap_ppd_polysection_name,
-            clip_percentile=99.0,
-        )
+        try:
+            self.ap_ppd_sections = create_ap_ppd_section_comparison(
+                traces=self.ap_ppd_section_traces,
+                sampling=self.ap_ppd_sampling,
+                folder_path=self.ap_ppd_folder,
+                section_name=self.active_ap_ppd_polysection_name,
+                clip_percentile=99.0,
+                selected_workflow=True,
+                selected_second_pass=True,
+                diagnostics=False,
+                selected_gain_tracks=(
+                    (85, 125, 95),
+                    (130, 175, 140),
+                ),
+            )
+        except Exception as exc:
+            show_error_dialog(f"Could not process ApPPD section:\n{exc}")
+            return
+
 
 
     def create_arbitrary_section(self):
