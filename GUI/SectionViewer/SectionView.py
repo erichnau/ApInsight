@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, PhotoImage
+from tkinter import filedialog, PhotoImage, simpledialog
 import matplotlib.pyplot as plt
 from PIL import Image
 import os
@@ -417,170 +417,156 @@ class SectionView(tk.Toplevel):
         return visible_left, visible_top, visible_right, visible_bottom
 
     def save_section(self):
-        file_path = filedialog.asksaveasfilename(defaultextension='.png', filetypes=[('PNG Image', '*.png')])
-        if not file_path:
-            return  # User cancelled the save operation
-
         visible_bounds = self.get_visible_image_bounds()
         if not visible_bounds:
-            return  # No visible bounds calculated
+            return
 
-        visible_left, visible_top, visible_right, visible_bottom = visible_bounds
+        # Open the original/native section image, NOT the canvas-resized image.
+        source_image = self.get_export_source_image()
 
-        if visible_right <= visible_left or visible_bottom <= visible_top:
-            return None  # Return None to indicate there's no valid crop area
+        native_bounds = self.display_bounds_to_native(
+            visible_bounds,
+            source_image.size
+        )
 
-        self.cropped_image = self.apply_transformations(visible_left, visible_top, visible_right, visible_bottom)
-        self.cropped_image.save(file_path, 'PNG')
+        native_crop = source_image.crop(native_bounds)
 
-        self.plot_image_with_labels(file_path)
+        scale = self.ask_export_scale(native_crop.size)
+        if scale is None:
+            return
 
-    def apply_transformations(self, visible_left, visible_top, visible_right, visible_bottom):
-        image_path = self.section_canvas.topo_image_path if self.tf.topo_corrected else self.section_canvas.image_path
-        pil_section_image = Image.open(image_path)
-        pil_section_image = pil_section_image.resize(
-            (self.section_canvas.section_image.width(), self.section_canvas.section_image.height()), Image.LANCZOS)
-        return pil_section_image.crop((visible_left, visible_top, visible_right, visible_bottom))
+        if scale != 1.0:
+            export_width = max(1, round(native_crop.width * scale))
+            export_height = max(1, round(native_crop.height * scale))
 
-    def plot_image_with_labels(self, file_path):
-        image_array = np.array(self.cropped_image)
-        xpixels, ypixels = image_array.shape[1], image_array.shape[0]
-        dpi = 300
-        plt.rcParams.update({'font.size': 10})
-        figsize = ((xpixels * 3) / dpi, (ypixels * 3) / dpi)
+            interpolation = 'lanczos'
+            resampling_filter = self.get_resampling_filter(interpolation)
 
-        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
-        ax.imshow(image_array)
-        ax.set_aspect('auto')
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.set_xlabel('')
-        ax.set_ylabel('')
-        ax.set_xlim([0, xpixels])
-        ax.set_ylim([ypixels, 0])
+            export_image = native_crop.resize(
+                (export_width, export_height),
+                resampling_filter
+            )
+        else:
+            export_image = native_crop
 
-        self._plot_labels(ax, ax.twinx())
+        file_path = filedialog.asksaveasfilename(
+            defaultextension='.png',
+            filetypes=[('PNG Image', '*.png')]
+        )
 
-        plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.05)
-        fig.savefig(file_path, dpi=300, bbox_inches='tight')
-        plt.close(fig)
+        if not file_path:
+            return
+
+        data_extent = self.get_visible_data_extent(visible_bounds)
+
+        self.render_section_export(
+            export_image,
+            file_path,
+            data_extent
+        )
+
         self.lift()
 
-    def _plot_labels(self, ax, ax_sec):
-        x_label_data = self.get_label_data(self.section_canvas.x_labels)
-        y_label_data = self.get_label_data(self.section_canvas.y_labels)
-        secondary_y_label_data = self.get_label_data(self.section_canvas.secondary_y_labels)
-        additional_label_data = self.get_label_data(self.section_canvas.additional_labels)
 
-        max_digits = max(len(data['text']) for data in y_label_data)
-        depth_label_offset = 5 + 5 * (max_digits - 2) if max_digits >= 3 else 5
+    def render_section_export(self, export_image, file_path, extent):
+        image_array = np.asarray(export_image)
 
-        self._configure_axis(ax, y_label_data, 'y')
-        self._configure_axis(ax_sec, secondary_y_label_data, 'sec_y', invert=True)
-        self._configure_axis(ax, x_label_data, 'x')
+        image_width, image_height = export_image.size
 
-        for data in additional_label_data:
-            self._plot_additional_labels(ax, data, depth_label_offset)
+        dpi = 300
 
-    def _configure_axis(self, ax, label_data, axis, invert=False):
-        vals, labs = [], []
-        for data in label_data:
-            pos = data['y'] if axis in ['y', 'sec_y'] else data['x']
-            lab = data['text']
-            vals.append(pos)
-            labs.append(lab)
+        # Margins in inches. This allows the actual GPR raster area
+        # to retain exactly the requested pixel dimensions.
+        left_margin = 0.65
+        right_margin = 0.65
+        bottom_margin = 0.55
+        top_margin = 0.15
 
-        max_val = max(vals)
-        min_val = min(vals)
-        ticks = np.linspace(max_val, min_val, num=5)
+        image_width_in = image_width / dpi
+        image_height_in = image_height / dpi
 
-        if axis in ['y', 'sec_y']:
-            ax.set_yticks(np.linspace(0, max_val - min_val, len(ticks)))
-            ax.set_yticklabels(labs)
-            if invert:
-                ax.invert_yaxis()
-        elif axis == 'x':
-            ax.set_xticks(np.linspace(0, max_val - min_val, len(ticks)))
-            ax.set_xticklabels(labs)
+        figure_width = (
+                image_width_in
+                + left_margin
+                + right_margin
+        )
 
-    def _plot_additional_labels(self, ax, data, depth_label_offset):
-        if data['tag'] == 'dist_label':
-            ax.text(data['x'] - self.section_canvas.y_axis_x, data['y'] - 5, data['text'], ha='center', va='top',
-                    color='black', fontweight='bold')
-        elif data['tag'] == 'depth_label':
-            ax.text(data['x'] - self.section_canvas.y_axis_x - depth_label_offset, data['y'] - 10, data['text'],
-                    rotation=90, ha='center', va='center', color='black', fontweight='bold')
-        elif data['tag'] == 'sec_depth_label':
-            ax.text(data['x'] - self.section_canvas.y_axis_x + depth_label_offset, data['y'] - 10, data['text'],
-                    rotation=90, ha='center', va='center', color='black', fontweight='bold')
+        figure_height = (
+                image_height_in
+                + bottom_margin
+                + top_margin
+        )
 
-    def get_label_data(self, label_ids):
-        label_data = []
-        for label_id in label_ids:
-            text = self.section_canvas.itemcget(label_id, 'text')
-            coords = self.section_canvas.coords(label_id)
-            tags = self.section_canvas.gettags(label_id)
-            if coords:
-                x_pos, y_pos = coords[0], coords[1]
-                tag = tags[0] if tags else None
-                label_data.append({'text': text, 'x': x_pos, 'y': y_pos, 'tag': tag})
+        fig = plt.figure(
+            figsize=(figure_width, figure_height),
+            dpi=dpi
+        )
 
-        if label_data and (label_data[0]['tag'] == 'label_x' or label_data[0]['tag'] == 'label_y'):
-            label_data = self.recalculate_labels(label_data)
+        ax = fig.add_axes([
+            left_margin / figure_width,
+            bottom_margin / figure_height,
+            image_width_in / figure_width,
+            image_height_in / figure_height,
+        ])
 
-        return label_data
+        x_start = extent['x_start']
+        x_end = extent['x_end']
 
-    def recalculate_labels(self, data):
-        axis = data[0]['tag']
-        min_pixel, max_pixel, pixel_interval = self._calculate_pixel_intervals(axis)
-        label_data_new = []
+        y_top = extent['y_top']
+        y_bottom = extent['y_bottom']
 
-        start_value, total_range, label_interval = self._calculate_label_intervals(data, min_pixel)
+        ax.imshow(
+            image_array,
+            extent=[
+                x_start,
+                x_end,
+                y_bottom,
+                y_top
+            ],
+            aspect='auto',
+            interpolation='none'
+        )
 
-        for i in range(5):
-            label_pos = min_pixel + i * pixel_interval
-            label_value = round(start_value + i * label_interval, 1)
-            if axis == 'label_x':
-                label_data_new.append({'text': str(label_value), 'x': label_pos, 'y': data[0]['y'], 'tag': axis})
-            elif axis == 'label_y':
-                label_data_new.append({'text': str(label_value), 'x': data[0]['x'], 'y': label_pos, 'tag': axis})
+        ax.set_xlim(x_start, x_end)
+        ax.set_ylim(y_bottom, y_top)
 
-        return label_data_new
+        # Five ticks, matching the current Section View.
+        x_ticks = np.linspace(x_start, x_end, 5)
+        y_ticks = np.linspace(y_top, y_bottom, 5)
 
-    def _calculate_pixel_intervals(self, axis):
-        if axis == 'label_x':
-            min_pixel = self.section_canvas.y_axis_x
-            max_pixel = self.section_canvas.secondary_y_axis_x
-        elif axis == 'label_y':
-            min_pixel = 10
-            max_pixel = self.section_canvas.x_axis_y
+        ax.set_xticks(x_ticks)
+        ax.set_yticks(y_ticks)
 
-        total_pixel_distance = max_pixel - min_pixel
-        pixel_interval = total_pixel_distance / 4
+        ax.set_xticklabels([
+            f"{x:.1f}" for x in x_ticks
+        ])
 
-        return min_pixel, max_pixel, pixel_interval
+        ax.set_yticklabels([
+            f"{y:.1f}" for y in y_ticks
+        ])
 
-    def _calculate_label_intervals(self, data, min_pixel):
-        axis = data[0]['tag']
-        lab1 = float(data[0]['text'])
-        lab2 = float(data[1]['text'])
+        ax.set_xlabel('Distance (m)')
+        ax.set_ylabel(extent['y_label'])
 
-        if axis == 'label_x':
-            lab1_pos = float(data[0]['x'])
-            lab2_pos = float(data[1]['x'])
-        elif axis == 'label_y':
-            lab1_pos = float(data[0]['y'])
-            lab2_pos = float(data[1]['y'])
+        # Matching secondary Y axis on the right.
+        ax_right = ax.twinx()
+        ax_right.set_ylim(ax.get_ylim())
+        ax_right.set_yticks(y_ticks)
 
-        interval = lab2 - lab1
-        interval_y = lab2_pos - lab1_pos
+        ax_right.set_yticklabels([
+            f"{y:.1f}" for y in y_ticks
+        ])
 
-        pixel_per_meter = interval_y / interval
-        start_value = lab1 - (lab1_pos - min_pixel) / pixel_per_meter
-        total_range = interval * 4
-        label_interval = total_range / 4
+        ax_right.set_ylabel(extent['y_label'])
 
-        return start_value, total_range, label_interval
+        fig.savefig(
+            file_path,
+            dpi=dpi,
+            transparent=False
+        )
+
+        plt.close(fig)
+
 
     def update_depthslice_canvas(self, x, y):
         x_coor, y_coor, d = self.get_xy_from_section_coor(x, return_distance=True)
@@ -691,3 +677,128 @@ class SectionView(tk.Toplevel):
         depth_value = int((y_data / num_rows) * depth_range * 100)  # Multiply by 100 to convert to centimeters
         depth_value = round(depth_value / (self.section.pixelsize_z * 100)) * (self.section.pixelsize_z * 100)  # Round to the nearest 5 cm step
         return depth_value
+
+    def get_export_source_image(self):
+        if self.tf.topo_corrected:
+            image_path = self.section_canvas.topo_image_path
+        else:
+            image_path = self.section_canvas.image_path
+
+        return Image.open(image_path).convert('RGBA')
+
+    def display_bounds_to_native(self, visible_bounds, native_size):
+        visible_left, visible_top, visible_right, visible_bottom = visible_bounds
+
+        display_width = self.section_canvas.section_image.width()
+        display_height = self.section_canvas.section_image.height()
+
+        native_width, native_height = native_size
+
+        scale_x = native_width / display_width
+        scale_y = native_height / display_height
+
+        native_left = round(visible_left * scale_x)
+        native_top = round(visible_top * scale_y)
+        native_right = round(visible_right * scale_x)
+        native_bottom = round(visible_bottom * scale_y)
+
+        # Ensure crop remains inside source image.
+        native_left = max(0, min(native_left, native_width))
+        native_right = max(0, min(native_right, native_width))
+        native_top = max(0, min(native_top, native_height))
+        native_bottom = max(0, min(native_bottom, native_height))
+
+        return (
+            native_left,
+            native_top,
+            native_right,
+            native_bottom
+        )
+
+    def ask_export_scale(self, native_size):
+        native_width, native_height = native_size
+
+        scale = simpledialog.askfloat(
+            "Export resolution",
+            (
+                f"Native resolution of visible section:\n"
+                f"{native_width} × {native_height} px\n\n"
+                f"Enter export scale factor:\n\n"
+                f"1  = native\n"
+                f"2  = 2×\n"
+                f"4  = 4×\n"
+                f"8  = 5×\n"
+                f"16 = 6×"
+            ),
+            initialvalue=1.0,
+            minvalue=0.1,
+            maxvalue=6.0,
+            parent=self
+        )
+
+        return scale
+
+    def get_visible_data_extent(self, visible_bounds):
+        visible_left, visible_top, visible_right, visible_bottom = visible_bounds
+
+        display_width = self.section_canvas.section_image.width()
+        display_height = self.section_canvas.section_image.height()
+
+        # Horizontal distance
+        x_start = (
+                          visible_left / display_width
+                  ) * self.section.dist
+
+        x_end = (
+                        visible_right / display_width
+                ) * self.section.dist
+
+        # Vertical range
+        if 'DTMfromGPR' in self.file_name:
+            full_top = self.section_canvas.max_depth_new
+            full_bottom = self.section_canvas.min_depth_new
+            y_label = 'Elevation (m)'
+
+        elif self.tf.topo_corrected:
+            full_top = max(self.section_canvas.height_profile)
+            full_bottom = (
+                    min(self.section_canvas.height_profile)
+                    - self.section.depth_m
+            )
+            y_label = 'Elevation (m)'
+
+        else:
+            full_top = 0.0
+            full_bottom = self.section.depth_m
+            y_label = 'Depth (m)'
+
+        y_start = full_top + (
+                (full_bottom - full_top)
+                * visible_top / display_height
+        )
+
+        y_end = full_top + (
+                (full_bottom - full_top)
+                * visible_bottom / display_height
+        )
+
+        return {
+            'x_start': x_start,
+            'x_end': x_end,
+            'y_top': y_start,
+            'y_bottom': y_end,
+            'y_label': y_label,
+        }
+
+    def get_resampling_filter(self, interpolation):
+        filters = {
+            'nearest': Image.Resampling.NEAREST,
+            'bilinear': Image.Resampling.BILINEAR,
+            'bicubic': Image.Resampling.BICUBIC,
+            'lanczos': Image.Resampling.LANCZOS,
+        }
+
+        return filters.get(
+            interpolation.lower(),
+            Image.Resampling.LANCZOS
+        )
