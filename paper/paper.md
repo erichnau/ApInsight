@@ -67,7 +67,7 @@ Where a terrain model is available, elevation differences along the line are use
 
 ![Schematic workflow and data structure of ApInsight. Processed GPR products remain external files linked through a lightweight JSON project. The plan and section views provide linked access to the processed 3D volume, while section geometries and images can be exported for GIS, reporting, and other workflows.\label{fig:workflow}](figures/apinsight_workflow.png){width="100%"}
 
-![Linked plan and section views in ApInsight, illustrated with a burial mound at Melhus preserved beneath a quick-clay slide. (a) The plan view shows the selected depth slice and the user-defined section line A–B across the mound. (b) The section view displays the corresponding vertical profile extracted through the processed 3D volume. Screenshot supplied by the author.\label{fig:gui}](figures/apinsight_gui_plan_section.png){width="100%"}
+![Linked plan and section views in ApInsight, illustrated with a burial mound at Melhus, Norway preserved beneath a quick-clay slide. (a) The plan view shows the selected depth slice and the user-defined section line A–B across the mound. (b) The section view displays the corresponding vertical profile extracted through the processed 3D volume. \label{fig:gui}](figures/apinsight_gui_plan_section.png){width="100%"}
 
 # Research impact statement
 
