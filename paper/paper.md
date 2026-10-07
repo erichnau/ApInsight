@@ -19,7 +19,7 @@ affiliations:
     index: 1
   - name: Angermann IT-Services GmbH, Vienna, Austria
     index: 2
-date: 6 October 2026
+date: 7 October 2026
 bibliography: paper.bib
 ---
 
@@ -83,8 +83,8 @@ The anthology *Arkeologisk geofysikk i Norge* discusses ApInsight's place in Nor
 
 # AI usage disclosure
 
-ChatGPT (OpenAI) assisted literature and software searches, manuscript drafting and revision, documentation, and regression-test development. The original Schlitzi+/ApInsight concept and the first released core predate the use of generative AI in this work. Suggested changes were assessed through source checking, manual code inspection, and deterministic numerical tests run locally and in continuous integration. The authors reviewed the resulting software description, references, and manuscript and retain responsibility for their content.
+ChatGPT (OpenAI; GPT-5-series models, including GPT-5.6 Sol during final manuscript preparation) assisted literature and software searches, manuscript drafting and revision, documentation, and regression-test development. Earlier ChatGPT-assisted development sessions used the then-current models available in the service and exact model versions were not consistently recorded. The original Schlitzi+/ApInsight concept and the first released core predate the use of generative AI in this work. AI-assisted suggestions were assessed through source checking, manual code inspection, and deterministic numerical tests run locally and in continuous integration. The authors reviewed and edited all AI-assisted outputs, made the core design decisions, and retain responsibility for the software and manuscript.
 
 # Acknowledgements
 
-Development was supported by strategic research funding from the Norwegian Institute for Cultural Heritage Research (NIKU), through institutional basic funding administered by the Research Council of Norway. The predecessor software was developed within VEMOP, supported by the regional research fund Oslofjordfondet. GeoSphere Austria provided additional financial support. The authors thank Alois Hinterleitner for assistance with the ApRadar `.fld` format.
+Development was supported by strategic research funding from the Norwegian Institute for Cultural Heritage Research (NIKU), through institutional basic funding administered by the Research Council of Norway. The predecessor software was developed within VEMOP, supported by the regional research fund Oslofjordfondet. GeoSphere Austria provided additional financial support. The funding bodies had no role in the preparation of this manuscript or the decision to submit it for publication. The authors thank Alois Hinterleitner for assistance with the ApRadar `.fld` format.
