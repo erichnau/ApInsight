@@ -143,5 +143,3 @@ Development of ApInsight was supported by strategic research funding from the No
 Financial support from [GeoSphere Austria](https://www.geosphere.at/) contributed to the further development and enhancement of the software.
 
 Special thanks are extended to Alois Hinterleitner from GeoSphere Austria, the original developer of ApRadar. His assistance in understanding and handling the custom `.fld` file format was greatly appreciated.
-
-Special thanks are also extended to [Markus Angermann](https://www.angermann.at/) for programming instruction, code review, and advice during the restructuring and documentation of the ApInsight codebase.
