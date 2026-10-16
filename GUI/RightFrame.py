@@ -16,6 +16,9 @@ from GUI.SectionViewer.ApPPDSectionView import ApPPDSectionView
 from data.ProjectData import ArbSectionData
 
 
+from GPR_func.ap_ppd.ap_ppd_section_cache import SectionCache, section_vertices
+
+
 class RightFrame(Frame):
     def __init__(self, master, frame_image, frame_left, menu_builder, project_data, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
@@ -30,6 +33,7 @@ class RightFrame(Frame):
 
         self.project_data = project_data
         self.project_file = None
+        self.ap_ppd_cache = SectionCache()
         self.ap_ppd_file = None
         self.ap_ppd_folder = None
         self.sections = {}
@@ -253,19 +257,33 @@ class RightFrame(Frame):
             )
             return
 
-        if section_info.get("type") != "polyline":
-            show_error_dialog(
-                "The focused section is not a polysection."
-            )
+        try:
+            vertices = section_vertices(section_info)
+            self.ap_ppd_cache.bind(self.project_file)
+        except Exception as exc:
+            show_error_dialog(f"Could not prepare section: {exc}")
             return
 
-        vertices = section_info.get("vertices")
-
-        if not vertices or len(vertices) < 2:
-            show_error_dialog(
-                "The focused polysection has too few vertices."
+        self.active_ap_ppd_polysection_name = section_name
+        self.active_ap_ppd_vertices = vertices
+        # Bump this identifier whenever the extraction/processing settings change.
+        recipe = "selected-v1:corridor=.5:spacing=.05:nearest=.2:edge=.35:second=1:tracks=85,125,95;130,175,140"
+        try:
+            cached = self.ap_ppd_cache.get(section_name, vertices, recipe)
+        except Exception as exc:
+            cached = None
+            messagebox.showwarning("ApPPD cache", f"Saved section could not be read; please regenerate it.\n{exc}")
+        if cached is not None:
+            reuse = messagebox.askyesnocancel(
+                "Saved ApPPD section",
+                "Open the cached section?\nYes: open immediately.\nNo: select source data and regenerate."
             )
-            return
+            if reuse is None:
+                return
+            if reuse:
+                self.ap_ppd_sections = cached
+                self._show_ap_ppd_section()
+                return
 
         # ---------------------------------------------------------
         # 2. Select one ApPPD file to identify the folder
@@ -425,6 +443,11 @@ class RightFrame(Frame):
             show_error_dialog(f"Could not process ApPPD section:\n{exc}")
             return
 
+        self.ap_ppd_cache.put(section_name, vertices, self.ap_ppd_sections,
+                              self.ap_ppd_folder, recipe)
+        self._show_ap_ppd_section()
+
+    def _show_ap_ppd_section(self):
         try:
             previous = getattr(self, "ap_ppd_view_window", None)
             if previous is not None and previous.winfo_exists():

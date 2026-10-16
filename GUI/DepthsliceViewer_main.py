@@ -1,3 +1,4 @@
+from GPR_func.ap_ppd.ap_ppd_section_cache import SectionCache, save_project_with_ap_ppd
 """GUI libraries"""
 import tkinter as tk
 from tkinter import Frame, Button, Menu, filedialog, messagebox, PanedWindow, PhotoImage, Toplevel, Text, END
@@ -248,65 +249,47 @@ class MenuBuilder:
             self.frame_right.update_project(self.json_file)
 
             self.project_data.load_sections()
+            # A newly opened project starts from its saved snapshot, not pending data.
+            self.frame_right.ap_ppd_cache = SectionCache()
+            self.frame_right.ap_ppd_cache.bind(self.json_file)
             self.previous_json_file = self.json_file
         else:
             self.json_file = self.previous_json_file
 
     def save_project_as(self):
-        if self.json_file:
-            file_path = filedialog.asksaveasfilename(
-                defaultextension=".json",
-                filetypes=[("JSON Files", "*.json")],
-                title="Save Project As"
-            )
-
-            if file_path:
-                # Load the current project data
-                project_data = self.project_data.load_project_from_json(self.json_file)
-
-                # Serialize the sections data
-                sections_data = {}
-                if len(self.frame_right.sections) > 0:
-                    sections_data = self.serialize_sections(self.frame_right.sections)
-
-                # Organize the data with 'projects' and 'sections' keys
-                data = {
-                    "projects": project_data,
-                    "sections": sections_data
-                }
-
-                # Save the organized data to the JSON file
-                with open(file_path, 'w') as file:
-                    json.dump(data, file, indent=4)
-
-                # Update the current project file path
-                self.json_file = file_path
-
-        else:
+        if not self.json_file:
             show_error_dialog('No project file is currently open')
+            return
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".json", filetypes=[("JSON Files", "*.json")],
+            title="Save Project As")
+        if file_path:
+            self._save_project_to(file_path)
 
     def save_project(self):
-        # Check if the current project file path is set
-        if self.json_file:
-            # Load the current project data
-            project_data = self.project_data.load_project_from_json(self.json_file)
-
-            # Serialize the sections data
-            sections_data = {}
-            if len(self.frame_right.sections) > 0:
-                sections_data = self.serialize_sections(self.frame_right.sections)
-
-            # Organize the data with 'projects' and 'sections' keys
-            data = {
-                "projects": project_data,
-                "sections": sections_data
-            }
-
-            # Save the organized data to the JSON file
-            with open(self.json_file, 'w') as file:
-                json.dump(data, file, indent=4)
-        else:
+        if not self.json_file:
             show_error_dialog('No project file is currently open')
+            return
+        self._save_project_to(self.json_file)
+
+    def _save_project_to(self, file_path):
+        try:
+            # Read metadata without reloading datasets or replacing live GUI state.
+            with open(self.json_file, encoding="utf-8") as file:
+                data = json.load(file)
+            data["sections"] = self.serialize_sections(self.frame_right.sections)
+            cache = self.frame_right.ap_ppd_cache
+            cache.bind(self.json_file)
+            saved_path = save_project_with_ap_ppd(
+                file_path, data, cache=cache, source_project=self.json_file)
+        except Exception as exc:
+            show_error_dialog(f"Could not save project:\n{exc}")
+            return False
+        # Update paths only after both arrays and project JSON were saved.
+        self.json_file = saved_path
+        self.previous_json_file = saved_path
+        self.frame_right.update_project(saved_path)
+        return True
 
     def serialize_sections(self, sections):
         serialized_data = {}

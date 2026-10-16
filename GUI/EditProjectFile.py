@@ -12,6 +12,8 @@ from GPR_func import read_fld
 from config_manager import ConfigurationManager
 from GPR_func.read_fld import create_depthslice_images
 
+from GPR_func.ap_ppd.ap_ppd_section_cache import save_project_with_ap_ppd
+
 global edit_project_window
 
 class ProjectGUI(Frame, object):
@@ -359,8 +361,7 @@ class ProjectGUI(Frame, object):
         new_data = {"projects": project_data, 'sections': self.section_data}
 
         # Save the updated data back to the JSON file
-        with open(json_file_path, 'w') as f:
-            json.dump(new_data, f, indent=4)
+        save_project_with_ap_ppd(json_file_path, new_data, persist=False)
 
         # Refresh the GUI
         self.open_file(self.json_file_path)
@@ -376,8 +377,7 @@ class ProjectGUI(Frame, object):
         data_to_save = {"projects": all_projects_data, 'sections': self.section_data}
 
         # Save the modified data back to the JSON file
-        with open(self.json_file_path, 'w') as f:
-            json.dump(data_to_save, f, indent=4)
+        save_project_with_ap_ppd(self.json_file_path, data_to_save, persist=False)
 
         # Re-open the file to refresh the GUI
         self.open_file(self.json_file_path)
@@ -429,19 +429,23 @@ class ProjectGUI(Frame, object):
 
             initial_file = os.path.basename(self.json_file_path)
 
+            source_project = self.json_file_path
+            target = source_project
             if not update_npy:
-                # Create and focus the save file dialog
-                file_dialog = filedialog.asksaveasfile(parent=self.master, initialdir=self.initial_directory, title='Save File',
-                                                   filetypes=(('JSON files', '*.json'), ('All files', '*.*')), initialfile=initial_file)
-
-
-                if file_dialog:
-                    self.json_file_path = file_dialog.name
-                    with open(self.json_file_path, 'w') as f:
-                        json.dump(data_to_save, f, indent=4)
-            else:
-                with open(self.json_file_path, 'w') as f:
-                    json.dump(data_to_save, f, indent=4)
+                target = filedialog.asksaveasfilename(
+                    parent=self.master, initialdir=self.initial_directory, title='Save File',
+                    filetypes=(('JSON files', '*.json'), ('All files', '*.*')),
+                    initialfile=initial_file, defaultextension='.json')
+                if not target:
+                    return
+            try:
+                save_project_with_ap_ppd(target, data_to_save,
+                                         source_project=source_project,
+                                         persist=not update_npy)
+            except Exception as exc:
+                messagebox.showerror('Save project', f'Could not save project:\n{exc}')
+                return
+            self.json_file_path = target
 
             if self.main_frame:
                 self.main_frame.destroy()
@@ -602,8 +606,7 @@ class ProjectGUI(Frame, object):
                     project_info['npy_file'] = npy_file_path
 
         data_to_save = {"projects": project_data, 'sections': section_data}
-        with open(json_file_path, 'w') as json_file:
-            json.dump(data_to_save, json_file, indent=4)
+        save_project_with_ap_ppd(json_file_path, data_to_save, persist=False)
 
         self.open_file(json_file_path)
 
@@ -852,8 +855,7 @@ class ProjectGUI(Frame, object):
 
         data_to_save = {"projects": project_data, 'sections': section_data}
 
-        with open(json_file_path, 'w') as json_file:
-            json.dump(data_to_save, json_file, indent=4)
+        save_project_with_ap_ppd(json_file_path, data_to_save, persist=False)
 
         self.open_file(json_file_path)
 
