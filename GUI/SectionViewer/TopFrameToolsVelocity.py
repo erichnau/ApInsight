@@ -179,43 +179,35 @@ class TopFrameToolsVelocity(tk.Frame):
         self.folder = os.path.dirname(file_path)  # Get folder path
         file_name = os.path.basename(file_path)  # Get filename only
 
-        # Check if the filename starts with "LINE" (new convention)
-        match = re.match(r"^(LINE)(\d+)", file_name)
+        self.folder = os.path.dirname(file_path)
 
-        if match:
-            # Extract project name (fixed "LINE") and line number
-            new_project_name = match.group(1)  # "LINE"
-            new_line_nr = match.group(2)  # Extracted number (e.g., "18")
-        else:
-            # Old naming convention
-            proj_name_temp = file_path[file_path.rfind('/') + 1:]
-            ind1 = proj_name_temp.rfind('_')
-            temp_1 = proj_name_temp[:proj_name_temp.rfind('_')]
-            ind2 = temp_1.rfind('_')
+        try:
+            (
+                new_project_name,
+                new_line_nr,
+                self.line_nr_digits,
+                self.profile_prefix,
+                self.profile_suffix
+            ) = self._parse_profile_filename(file_path)
 
-            new_line_nr = proj_name_temp[:ind1][ind2 + 1:]
-            new_project_name = proj_name_temp[:ind2]  # Extract everything before that number
+        except ValueError as e:
+            print(e)
+            return
 
-        new_appendix = file_name[file_name.rfind('_'):]  # Everything after last "_"
-        new_extension = file_name.split('.')[-1]  # File extension
-
-        # Check if the project name has changed
+        # Reset velocity model when opening another project
         if new_project_name != self.project_name:
-            self.velo_model = []  # Reset velocity model
+            self.velo_model = []
             self.plot_velo_model.config(state='disabled')
             self.save_velo_model.config(state='disabled')
 
-        self.line_nr = int(new_line_nr)  # Convert line number to integer
-        self.line_nr_digits = len(new_line_nr)  # Store the length of the
+        self.line_nr = new_line_nr
         self.project_name = new_project_name
-        self.appendix = new_appendix
-        print(self.appendix)
-        self.extension = new_extension
 
         self.project_label2.config(text=self.project_name)
         self.line_label2.config(text=str(self.line_nr))
 
         self.master.lift()
+
 
     def activate_buttons(self):
         self.previous_file.config(state='normal')
@@ -567,13 +559,15 @@ class TopFrameToolsVelocity(tk.Frame):
         c = 1
 
         def open_next(c):
-            new_number = format((self.line_nr + c), f"0{self.line_nr_digits}d")
+            new_number = format(
+                self.line_nr + c,
+                f"0{self.line_nr_digits}d"
+            )
 
-            # Check if using the "LINE" naming convention
-            if self.project_name.startswith("LINE"):
-                next_profile = f"{self.folder}/{self.project_name[:4]}{new_number}{self.appendix}"
-            else:
-                next_profile = f"{self.folder}/{self.project_name}_{str(new_number).zfill(self.line_nr_digits)}{self.appendix}"
+            next_profile = os.path.join(
+                self.folder,
+                f"{self.profile_prefix}{new_number}{self.profile_suffix}"
+            )
 
             print("Trying to open:", next_profile)
 
@@ -582,8 +576,7 @@ class TopFrameToolsVelocity(tk.Frame):
                 self.open_file(self.file)
             else:
                 if c <= 10:
-                    c += 1
-                    open_next(c)
+                    open_next(c + 1)
 
         open_next(c)
         self.plot_saved_model()
@@ -592,26 +585,143 @@ class TopFrameToolsVelocity(tk.Frame):
         c = 1
 
         def open_previous(c):
-            new_number = format((self.line_nr - c), f"0{self.line_nr_digits}d")
+            new_line = self.line_nr - c
 
-            # Check if using the "LINE" naming convention
-            if self.project_name.startswith("LINE"):
-                next_profile = f"{self.folder}/{self.project_name[:4]}{new_number}{self.appendix}"
-            else:
-                next_profile = f"{self.folder}/{self.project_name}_{str(new_number).zfill(self.line_nr_digits)}{self.appendix}"
+            if new_line < 0:
+                return
 
-            print("Trying to open:", next_profile)
+            new_number = format(
+                new_line,
+                f"0{self.line_nr_digits}d"
+            )
 
-            if path.exists(next_profile):
-                self.file = next_profile
+            previous_profile = os.path.join(
+                self.folder,
+                f"{self.profile_prefix}{new_number}{self.profile_suffix}"
+            )
+
+            print("Trying to open:", previous_profile)
+
+            if path.exists(previous_profile):
+                self.file = previous_profile
                 self.open_file(self.file)
             else:
                 if c <= 10:
-                    c += 1
-                    open_previous(c)
+                    open_previous(c + 1)
 
         open_previous(c)
         self.plot_saved_model()
+
+    def _parse_profile_filename(self, file_path):
+        """
+        Parse supported GPR profile filename conventions.
+
+        Returns:
+            project_name
+            line_number
+            line_number_digits
+            profile_prefix
+            profile_suffix
+
+        Examples
+        --------
+        B10_LINE01.dat
+            project = B10
+            line = 1
+            prefix = B10_LINE
+            suffix = .dat
+
+        LINE018_1.dat
+            project = LINE
+            line = 18
+            prefix = LINE
+            suffix = _1.dat
+
+        PROJECT_018_1.dat
+            project = PROJECT
+            line = 18
+            prefix = PROJECT_
+            suffix = _1.dat
+        """
+
+        file_name = os.path.basename(file_path)
+        stem, extension = os.path.splitext(file_name)
+
+        # ------------------------------------------------------------
+        # Convention 1:
+        # PROJECT_LINE01.dat
+        # PROJECT_LINE001.dat
+        # ------------------------------------------------------------
+        match = re.match(
+            r"^(?P<project>.+?)_LINE(?P<line>\d+)(?P<suffix>.*)$",
+            stem,
+            re.IGNORECASE
+        )
+
+        if match:
+            project_name = match.group("project")
+            line_string = match.group("line")
+            suffix = match.group("suffix") + extension
+
+            prefix = f"{project_name}_LINE"
+
+            return (
+                project_name,
+                int(line_string),
+                len(line_string),
+                prefix,
+                suffix
+            )
+
+        # ------------------------------------------------------------
+        # Convention 2:
+        # LINE01.dat
+        # LINE018_1.dat
+        # ------------------------------------------------------------
+        match = re.match(
+            r"^LINE(?P<line>\d+)(?P<suffix>.*)$",
+            stem,
+            re.IGNORECASE
+        )
+
+        if match:
+            line_string = match.group("line")
+            suffix = match.group("suffix") + extension
+
+            return (
+                "LINE",
+                int(line_string),
+                len(line_string),
+                "LINE",
+                suffix
+            )
+
+        # ------------------------------------------------------------
+        # Convention 3 - old ApRadar naming:
+        # PROJECT_001_xxx.dat
+        # ------------------------------------------------------------
+        match = re.match(
+            r"^(?P<project>.+)_(?P<line>\d+)(?P<suffix>_.+)$",
+            stem
+        )
+
+        if match:
+            project_name = match.group("project")
+            line_string = match.group("line")
+            suffix = match.group("suffix") + extension
+
+            return (
+                project_name,
+                int(line_string),
+                len(line_string),
+                f"{project_name}_",
+                suffix
+            )
+
+        raise ValueError(
+            f"Could not determine project and line number from filename:\n"
+            f"{file_name}"
+        )
 
 
 class ToolTip:
@@ -641,3 +751,4 @@ class ToolTip:
         self.tip_window = None
         if tw:
             tw.destroy()
+
