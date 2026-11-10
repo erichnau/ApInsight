@@ -147,77 +147,91 @@ def readdt1Header(filename):
 
     return sampling_frequency, timewindow, number_of_samples, nr_traces
 
+def _read_reflex_layout(file_name):
+    """Read the two ReflexW/ApRadar binary layouts supported by ApInsight.
+
+    Offsets are in bytes, little endian. The older layout uses int16 counts
+    and float32 metadata; the newer export uses int32 counts and float64
+    metadata. DAT records consist of a trace header followed by samples.
+    """
+    filename = str(file_name) + '.par'
+    with open(filename, 'rb') as header_file:
+        header = header_file.read()
+    if len(header) < 524:
+        raise ValueError(f"{filename}: PAR header is too short ({len(header)} bytes).")
+
+    # In the old layout the trace count immediately follows the int16 sample
+    # count. In the new layout these two bytes are the high half of int32
+    # samples (zero for ordinary radar traces).
+    legacy_samples, legacy_traces = struct.unpack_from('<hh', header, 420)
+    if legacy_samples > 0 and legacy_traces > 0:
+        nr_sample, nr_traces = legacy_samples, legacy_traces
+        trace_increment, time_increment = struct.unpack_from('<ff', header, 460)
+        antenna_separation = struct.unpack_from('<f', header, 520)[0]
+        trace_header_bytes, sample_dtype = 62, np.dtype('<i2')
+    else:
+        if len(header) < 620:
+            raise ValueError(f"{filename}: invalid legacy counts or incomplete new PAR header.")
+        nr_sample, nr_traces = struct.unpack_from('<ii', header, 420)
+        trace_increment, time_increment = struct.unpack_from('<dd', header, 492)
+        antenna_separation = struct.unpack_from('<d', header, 612)[0]
+        trace_header_bytes, sample_dtype = 158, np.dtype('<f4')
+
+    if nr_sample <= 0 or nr_traces <= 0:
+        raise ValueError(f"{filename}: invalid sample/trace counts ({nr_sample}, {nr_traces}).")
+    if not np.isfinite(time_increment) or time_increment <= 0:
+        raise ValueError(f"{filename}: invalid time increment {time_increment}.")
+    if not np.isfinite(trace_increment) or not np.isfinite(antenna_separation):
+        raise ValueError(f"{filename}: non-finite trace increment or antenna separation.")
+
+    # Keep the existing public tuple order and antenna-separation rounding.
+    info = (trace_increment, time_increment, nr_traces, nr_sample,
+            round(antenna_separation, 2))
+    return info, trace_header_bytes, sample_dtype
+
+
 def read_par(file_name):
+    """Read ReflexW/ApRadar PAR metadata; file_name excludes the extension.
+
+    Returns (trace_increment, time_increment, nr_traces, nr_sample,
+    antenna_separation), as in earlier versions of ApInsight.
     """
-    Reads the ReflexW par file (header information)
-    INPUT:
-    filename      file name for header with .rad extension
+    return _read_reflex_layout(file_name)[0]
 
-    OUTPUT:
-    info          dict with information from the header
-    """
-    filename = file_name + '.par'
-    '____________________________________________________________'
-    data1 = np.fromfile(filename, dtype=np.float32)
-    value_list = []
-    data2 = data1.tolist()
-    for i in data2:
-        value_list.append(f'{round(i, 7):.8f}')
-
-    time_increment = value_list[116]
-    trace_increment = value_list[115]
-    antenna_separation = round(float(value_list[130]), 2)
-    '_______________________________________________________'
-
-    data3 = np.fromfile(filename, dtype=np.int16)
-    list2 = []
-    data4 = data3.tolist()
-    for i in data4:
-        list2.append(i)
-
-
-    nr_sample = list2[210]
-    nr_traces = list2[211]
-
-    info = trace_increment, time_increment, nr_traces, nr_sample, antenna_separation
-
-    return info
 
 def read_dat(file_name):
+    """Read legacy int16 or newer float32 ReflexW/ApRadar DAT records.
+
+    Returns a matrix with samples in rows and traces in columns. The POS
+    sidecar is optional and is not needed to decode amplitudes or PAR metadata.
     """
-    Reads the ReflexW data file .dat and the .par header.
+    info, trace_header_bytes, sample_dtype = _read_reflex_layout(file_name)
+    _, _, nr_traces, nr_sample, _ = info
+    filename = str(file_name) + '.dat'
+    record_bytes = trace_header_bytes + nr_sample * sample_dtype.itemsize
+    expected_bytes = nr_traces * record_bytes
 
-    Added a check to make sure that the output data falls within the 16-bit signed integer
-
-    INPUT:
-    file_name     data file name without the extension!
-    OUTPUT:
-    data          data matrix whose columns contain the traces
-    """
-    trace_increment, time_increment, nr_traces, nr_sample, antenna_separation = read_par(file_name)
-
-    filename = file_name + '.dat'
-    gpr_data = np.fromfile(filename, dtype=np.int16)
-
-    # Verify the data is within the 16-bit signed integer range
-    if np.any(gpr_data < -32767) or np.any(gpr_data > 32766):
-        gpr_data = np.clip(gpr_data, -32767, 32766)
-
-    delete_list = []
-    x = 0
-    for i in range(nr_traces):
-        x = i * (nr_sample + 31)
-        delete_list.append(x)
-
-    delete_list_final = []
-
-    for element in delete_list:
-        for i in range(31):
-            x = element + i
-            delete_list_final.append(x)
-
-    data_ex = np.delete(gpr_data, delete_list_final)
-
-    data = np.asmatrix(data_ex.reshape(nr_traces, nr_sample)).T
-
-    return data
+    with open(filename, 'rb') as data_file:
+        actual_bytes = data_file.seek(0, 2)
+        if actual_bytes != expected_bytes:
+            raise ValueError(
+                f"{filename}: DAT size {actual_bytes} bytes does not match PAR "
+                f"dimensions ({nr_traces} traces x {nr_sample} samples; "
+                f"expected {expected_bytes} bytes, {sample_dtype.name} samples, "
+                f"{trace_header_bytes}-byte trace headers). "
+                "The file may be incomplete, mismatched, or an unsupported export layout."
+            )
+        data_file.seek(0)
+        record_dtype = np.dtype([
+            ('header', 'V' + str(trace_header_bytes)),
+            ('samples', sample_dtype, (nr_sample,)),
+        ])
+        records = np.fromfile(data_file, dtype=record_dtype, count=nr_traces)
+    if len(records) != nr_traces:
+        raise ValueError(f"{filename}: DAT file ended before all traces were read.")
+    data = records['samples'].copy()
+    if sample_dtype.kind == 'i':
+        # Preserve the legacy reader's amplitude clipping. Float32 exports
+        # retain their original amplitudes and fractional precision.
+        np.clip(data, -32767, 32766, out=data)
+    return np.asmatrix(data.T)

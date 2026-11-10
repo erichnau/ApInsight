@@ -89,7 +89,10 @@ class SectionCanvas(tk.Canvas):
             self.toolbar = NavigationToolbar2Tk(self.canvas, self)
             self.toolbar.update()
             self.toolbar.pack_forget()
-            self.canvas.get_tk_widget().place(x=0, y=0)
+            # Fit the embedded plot to its parent, including after DPI changes.
+            self.canvas.get_tk_widget().place(
+                x=0, y=0, relwidth=1.0, relheight=1.0
+            )
 
             self.canvas.mpl_connect('motion_notify_event', self.disable_cursor_change)
 
